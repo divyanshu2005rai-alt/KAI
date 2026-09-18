@@ -1,0 +1,35 @@
+# KAI Configuration
+# Universal AI Input Layer
+# ========================
+
+[general]
+# The prefix that activates KAI. Type this prefix anywhere to start a trigger.
+trigger_prefix = ";;"
+
+# How to terminate a prompt. "enter" = press Enter to send.
+terminator = "enter"
+
+# Maximum seconds to wait for an AI response.
+timeout_seconds = 30
+
+[providers.openai]
+# Your OpenAI API key.
+# RECOMMENDED: Set the OPENAI_API_KEY environment variable instead of putting it here.
+# If you set it here, make sure this file has restricted permissions.
+# api_key = "sk-..."
+
+# Base URL — change this to use Azure OpenAI, Ollama, LM Studio, etc.
+base_url = "https://api.openai.com/v1"
+
+# Default model for AI requests.
+# Faster/cheaper: "gpt-4o-mini"
+# More capable: "gpt-4o"
+default_model = "gpt-4o-mini"
+
+[injection]
+# Text longer than this many characters uses clipboard paste (faster).
+# Text shorter than this uses simulated keystrokes (safer for all apps).
+clipboard_threshold = 200
+
+# Delay between backspace keystrokes when erasing trigger text (milliseconds).
+backspace_delay_ms = 5

@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "kai-core",
+]
+resolver = "2"

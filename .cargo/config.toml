@@ -1,0 +1,11 @@
+# KAI — Cargo Configuration
+# Configures the Rust toolchain to use the GNU target on Windows,
+# which requires MinGW/gcc instead of MSVC link.exe
+
+[build]
+# Use the GNU toolchain for Windows (requires MinGW gcc)
+target = "x86_64-pc-windows-gnu"
+
+[target.x86_64-pc-windows-gnu]
+linker = "C:\\msys64\\mingw64\\bin\\gcc.exe"
+ar = "C:\\msys64\\mingw64\\bin\\ar.exe"

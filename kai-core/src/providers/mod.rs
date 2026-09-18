@@ -1,0 +1,79 @@
+// ============================================================
+// providers/mod.rs — AI Provider abstraction layer
+//
+// Defines the AiProvider trait and shared request/response types.
+// All AI providers (OpenAI, Anthropic, Gemini, local) implement
+// this trait, enabling easy swapping and multi-provider support.
+// ============================================================
+
+pub mod gemini;
+pub mod openai;
+
+use anyhow::Result;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+/// A request to an AI completion provider.
+#[derive(Debug, Clone, Serialize)]
+pub struct CompletionRequest {
+    /// System-level instructions (persona, constraints, format rules)
+    pub system_prompt: String,
+    /// The user's actual prompt/query
+    pub user_prompt: String,
+    /// Maximum tokens in the response (None = provider default)
+    pub max_tokens: Option<u32>,
+}
+
+/// Token usage statistics from the provider.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TokenUsage {
+    pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+}
+
+/// A completed AI response.
+#[derive(Debug, Clone)]
+pub struct CompletionResponse {
+    /// The generated text (already extracted from the provider's JSON structure)
+    pub text: String,
+    /// Token usage statistics
+    pub usage: TokenUsage,
+    /// Which model actually generated the response
+    pub model: String,
+}
+
+/// Errors that can occur when calling an AI provider.
+#[derive(Debug, thiserror::Error)]
+pub enum ProviderError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("API error {status}: {message}")]
+    Api { status: u16, message: String },
+
+    #[error("Response parse error: {0}")]
+    Parse(String),
+
+    #[error("Authentication error — check your API key")]
+    Auth,
+
+    #[error("Rate limited — too many requests")]
+    RateLimit,
+
+    #[error("No content in response")]
+    NoContent,
+}
+
+/// The core trait all AI providers must implement.
+#[async_trait]
+pub trait AiProvider: Send + Sync {
+    /// Human-readable provider name (e.g. "OpenAI", "Anthropic")
+    fn name(&self) -> &str;
+
+    /// Currently configured model name
+    fn model(&self) -> &str;
+
+    /// Send a completion request and await the full response.
+    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError>;
+}
