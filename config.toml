@@ -4,27 +4,48 @@
 
 [general]
 # The prefix that activates KAI. Type this prefix anywhere to start a trigger.
-trigger_prefix = ";;"
+trigger_prefix = "@@"
 
-# How to terminate a prompt. "enter" = press Enter to send.
-terminator = "enter"
+# How to terminate a prompt. Press ALT to send.
+terminator = "alt"
 
 # Maximum seconds to wait for an AI response.
 timeout_seconds = 30
 
-[providers.openai]
-# Your OpenAI API key.
-# RECOMMENDED: Set the OPENAI_API_KEY environment variable instead of putting it here.
-# If you set it here, make sure this file has restricted permissions.
-# api_key = "sk-..."
+# Maximum prompt characters accepted before dispatch.
+max_prompt_chars = 12000
 
-# Base URL — change this to use Azure OpenAI, Ollama, LM Studio, etc.
-base_url = "https://api.openai.com/v1"
+# Recent user/assistant turns retained in memory.
+context_turns = 10
 
-# Default model for AI requests.
-# Faster/cheaper: "gpt-4o-mini"
-# More capable: "gpt-4o"
-default_model = "gpt-4o-mini"
+# Copy selected text into the AI request. Disabled by default for privacy.
+include_selected_text = false
+
+# Request streamed output when supported. KAI injects only the final response.
+stream_responses = false
+
+[providers]
+# Provider selection: "auto", "groq", "gemini", or "openai-compatible".
+# The compatible option is intended for future Qwen, Ollama, and LM Studio use.
+active_provider = "auto"
+
+[providers.gemini]
+# api_key = "your-gemini-key-here"
+default_model = "gemini-2.5-flash"
+
+[routing]
+# Strategy: "auto", "cloud", or "local".
+strategy = "auto"
+# Prefer [providers.openai_compatible] in auto mode.
+local_first = false
+# Try another configured route after a provider failure.
+fallback = true
+
+# Example future/local provider (disabled until active_provider is changed):
+# [providers.openai_compatible]
+# env_key = "QWEN_API_KEY"
+# base_url = "https://your-compatible-endpoint/v1"
+# default_model = "your-model-name"
 
 [injection]
 # Text longer than this many characters uses clipboard paste (faster).

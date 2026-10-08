@@ -13,15 +13,17 @@
 
 use log::{debug, info};
 use std::collections::VecDeque;
+use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::config::Config;
 use crate::listener::KeyEvent;
+use crate::state::AppState;
 
 /// A fully captured trigger, ready for AI dispatch.
 #[derive(Debug, Clone)]
 pub struct CapturedTrigger {
-    /// The raw text as the user typed it (e.g. "//ask explain recursion")
+    /// The raw text as the user typed it (e.g. "@@ask explain recursion")
     pub raw_text: String,
     /// Total number of visible characters typed (for backspace deletion)
     pub char_count: usize,
@@ -47,10 +49,15 @@ pub struct TriggerEngine {
     capture_buffer: String,
     /// Total characters typed since trigger start (including "//" prefix)
     total_chars: usize,
+    app_state: Arc<AppState>,
 }
 
 impl TriggerEngine {
-    pub fn new(config: Config, tx: UnboundedSender<CapturedTrigger>) -> Self {
+    pub fn new(
+        config: Config,
+        tx: UnboundedSender<CapturedTrigger>,
+        app_state: Arc<AppState>,
+    ) -> Self {
         let prefix_len = config.general.trigger_prefix.len() + 20; // buffer headroom
         Self {
             config,
@@ -59,6 +66,7 @@ impl TriggerEngine {
             idle_buffer: VecDeque::with_capacity(prefix_len),
             capture_buffer: String::new(),
             total_chars: 0,
+            app_state,
         }
     }
 
@@ -70,6 +78,10 @@ impl TriggerEngine {
     }
 
     fn handle_event(&mut self, event: KeyEvent) {
+        if self.app_state.is_paused() {
+            self.reset();
+            return;
+        }
         match &self.state {
             State::Idle => self.handle_idle(event),
             State::Capturing => self.handle_capturing(event),
@@ -90,7 +102,7 @@ impl TriggerEngine {
                     self.idle_buffer.pop_front();
                 }
 
-                // Check if buffer ends with our trigger prefix (e.g. ";;")
+                // Check if buffer ends with our trigger prefix (e.g. "@@")
                 let buffer_str: String = self.idle_buffer.iter().collect();
                 if buffer_str.ends_with(&self.config.general.trigger_prefix) {
                     info!("⚡ Trigger prefix detected — entering capture mode");
@@ -112,7 +124,10 @@ impl TriggerEngine {
         // Count the prefix characters ("//" = 2 chars)
         self.total_chars = self.config.general.trigger_prefix.len();
         self.idle_buffer.clear();
-        debug!("Capture mode active. total_chars starts at {}", self.total_chars);
+        debug!(
+            "Capture mode active. total_chars starts at {}",
+            self.total_chars
+        );
     }
 
     // ── Capturing state handlers ────────────────────────────────
@@ -122,14 +137,20 @@ impl TriggerEngine {
             KeyEvent::Char(c) => {
                 self.capture_buffer.push(c);
                 self.total_chars += 1;
-                debug!("Captured: {:?} (total chars: {})", self.capture_buffer, self.total_chars);
+                debug!(
+                    "Captured input character (total chars: {})",
+                    self.total_chars
+                );
             }
 
             KeyEvent::Enter => {
                 // Enter key while capturing allows multi-line prompts!
                 self.capture_buffer.push('\n');
                 self.total_chars += 1;
-                debug!("Captured newline in prompt (total chars: {})", self.total_chars);
+                debug!(
+                    "Captured newline in prompt (total chars: {})",
+                    self.total_chars
+                );
             }
 
             KeyEvent::Alt => {
@@ -142,7 +163,10 @@ impl TriggerEngine {
 
                 let char_count = self.total_chars;
 
-                info!("✓ Trigger complete via ALT key: {:?} ({} chars to delete)", raw, char_count);
+                info!(
+                    "✓ Trigger complete via ALT key ({} chars to delete)",
+                    char_count
+                );
 
                 if !self.capture_buffer.trim().is_empty() {
                     let trigger = CapturedTrigger {
@@ -183,5 +207,106 @@ impl TriggerEngine {
         self.capture_buffer.clear();
         self.idle_buffer.clear();
         self.total_chars = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    fn engine() -> (TriggerEngine, UnboundedReceiver<CapturedTrigger>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (
+            TriggerEngine::new(Config::default(), tx, Arc::new(AppState::new())),
+            rx,
+        )
+    }
+
+    fn start_capture(engine: &mut TriggerEngine) {
+        engine.handle_event(KeyEvent::Char('@'));
+        engine.handle_event(KeyEvent::Char('@'));
+    }
+
+    #[test]
+    fn captures_trigger_and_counts_prefix() {
+        let (mut engine, mut rx) = engine();
+        start_capture(&mut engine);
+        for c in "ask hello".chars() {
+            engine.handle_event(KeyEvent::Char(c));
+        }
+        engine.handle_event(KeyEvent::Alt);
+
+        let captured = rx.try_recv().expect("trigger should be sent");
+        assert_eq!(captured.raw_text, "@@ask hello");
+        assert_eq!(captured.char_count, "@@ask hello".chars().count());
+    }
+
+    #[test]
+    fn backspace_removes_last_captured_character() {
+        let (mut engine, mut rx) = engine();
+        start_capture(&mut engine);
+        for c in "ask helo".chars() {
+            engine.handle_event(KeyEvent::Char(c));
+        }
+        engine.handle_event(KeyEvent::Backspace);
+        engine.handle_event(KeyEvent::Char('l'));
+        engine.handle_event(KeyEvent::Alt);
+
+        let captured = rx.try_recv().expect("trigger should be sent");
+        assert_eq!(captured.raw_text, "@@ask hell");
+        assert_eq!(captured.char_count, "@@ask hell".chars().count());
+    }
+
+    #[test]
+    fn escape_cancels_without_sending() {
+        let (mut engine, mut rx) = engine();
+        start_capture(&mut engine);
+        engine.handle_event(KeyEvent::Char('a'));
+        engine.handle_event(KeyEvent::Escape);
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(engine.state, State::Idle);
+    }
+
+    #[test]
+    fn enter_is_preserved_inside_prompt() {
+        let (mut engine, mut rx) = engine();
+        start_capture(&mut engine);
+        for c in "ask first".chars() {
+            engine.handle_event(KeyEvent::Char(c));
+        }
+        engine.handle_event(KeyEvent::Enter);
+        for c in "second".chars() {
+            engine.handle_event(KeyEvent::Char(c));
+        }
+        engine.handle_event(KeyEvent::Alt);
+
+        let captured = rx.try_recv().expect("trigger should be sent");
+        assert_eq!(captured.raw_text, "@@ask first\nsecond");
+    }
+
+    #[test]
+    fn empty_trigger_is_not_sent() {
+        let (mut engine, mut rx) = engine();
+        start_capture(&mut engine);
+        engine.handle_event(KeyEvent::Alt);
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(engine.state, State::Idle);
+    }
+
+    #[test]
+    fn paused_engine_ignores_input_and_resets_capture() {
+        let (mut engine, mut rx) = engine();
+        engine.app_state.set_paused(true);
+        start_capture(&mut engine);
+        for c in "ask do not send".chars() {
+            engine.handle_event(KeyEvent::Char(c));
+        }
+        engine.handle_event(KeyEvent::Alt);
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(engine.state, State::Idle);
     }
 }

@@ -5,7 +5,7 @@
 // Auto-creates the file with all defaults on first run.
 //
 // Each trigger entry in the YAML has:
-//   name:       the command word (e.g. "ask" -> type "//ask ...")
+//   name:       the command word (e.g. "ask" -> type "@@ask ...")
 //   aliases:    optional list of alternative names
 //   prompt:     the AI system instruction for this trigger
 //   max_tokens: optional max response length (default: 2000)
@@ -15,6 +15,7 @@
 //   let (system_prompt, max_tokens) = triggers.resolve("ask");
 // ============================================================
 
+use anyhow::bail;
 use anyhow::{Context, Result};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -68,14 +69,20 @@ impl TriggersFile {
         let triggers: TriggersFile = serde_yaml::from_str(&content)
             .with_context(|| format!("Failed to parse triggers.yml: {:?}", path))?;
 
-        info!("Loaded {} trigger(s) from {:?}", triggers.triggers.len(), path);
+        triggers.validate()?;
+
+        info!(
+            "Loaded {} trigger(s) from {:?}",
+            triggers.triggers.len(),
+            path
+        );
         for t in &triggers.triggers {
             let alias_str = if t.aliases.is_empty() {
                 String::new()
             } else {
                 format!(" (aliases: {})", t.aliases.join(", "))
             };
-            info!("  //{}{}",  t.name, alias_str);
+            info!("  //{}{}", t.name, alias_str);
         }
 
         Ok(triggers)
@@ -90,8 +97,60 @@ impl TriggersFile {
                 return (&trigger.prompt, trigger.max_tokens.unwrap_or(2000));
             }
         }
-        warn!("No trigger found for command '{}' — using fallback", command);
+        warn!(
+            "No trigger found for command '{}' — using fallback",
+            command
+        );
         (&self.fallback_prompt, 2000)
+    }
+
+    /// Returns whether a command or alias is explicitly configured.
+    pub fn contains(&self, command: &str) -> bool {
+        let cmd = command.to_lowercase();
+        if cmd == "help" || cmd == "list" {
+            return true;
+        }
+        self.triggers
+            .iter()
+            .any(|trigger| trigger.name == cmd || trigger.aliases.iter().any(|alias| alias == &cmd))
+    }
+
+    /// Validates trigger names and aliases before they can be used.
+    pub fn validate(&self) -> Result<()> {
+        let mut names = std::collections::HashSet::new();
+        for trigger in &self.triggers {
+            if trigger.name.trim().is_empty() || trigger.prompt.trim().is_empty() {
+                bail!("trigger names and prompts must not be empty");
+            }
+            for name in std::iter::once(&trigger.name).chain(trigger.aliases.iter()) {
+                let normalized = name.to_lowercase();
+                if normalized == "help" || normalized == "list" || !names.insert(normalized.clone())
+                {
+                    bail!("duplicate or reserved trigger name: {}", name);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns the locally available command names and aliases.
+    pub fn help_text(&self, prefix: &str) -> String {
+        let mut output = format!(
+            "KAI commands:\n  {}help or {}list — show this list\n",
+            prefix, prefix
+        );
+        for trigger in &self.triggers {
+            output.push_str("  ");
+            output.push_str(prefix);
+            output.push_str(&trigger.name);
+            if !trigger.aliases.is_empty() {
+                output.push_str(" (aliases: ");
+                output.push_str(&trigger.aliases.join(", "));
+                output.push(')');
+            }
+            output.push('\n');
+        }
+        output
     }
 
     /// Creates the default triggers.yml with all built-in triggers.
@@ -107,11 +166,11 @@ impl TriggersFile {
 #
 # How to use:
 #   In any text field, type the prefix followed by a command and your prompt.
-#   Example: "//ask what is the capital of France"
+#   Example: "@@ask what is the capital of France"
 #   Then press ALT to send.
 #
 # Trigger format:
-#   name:       The command word (e.g. "ask" -> type "//ask ...")
+#   name:       The command word (e.g. "ask" -> type "@@ask ...")
 #   aliases:    Other names that do the same thing (optional)
 #   prompt:     The AI system instruction for this trigger
 #   max_tokens: Max response length (optional, default: 2000)
@@ -196,8 +255,63 @@ fallback_prompt: >
             .with_context(|| format!("Failed to write default triggers.yml: {:?}", path))?;
 
         info!("Default triggers.yml created at {:?}", path);
-        warn!("Edit {:?} to customize your triggers. Restart KAI to apply changes.", path);
+        warn!(
+            "Edit {:?} to customize your triggers. Restart KAI to apply changes.",
+            path
+        );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn definitions() -> TriggersFile {
+        TriggersFile {
+            triggers: vec![TriggerDef {
+                name: "coder".to_string(),
+                aliases: vec!["code".to_string()],
+                prompt: "coding assistant".to_string(),
+                max_tokens: Some(1000),
+            }],
+            fallback_prompt: "fallback".to_string(),
+        }
+    }
+
+    #[test]
+    fn contains_known_command_and_alias() {
+        let triggers = definitions();
+        assert!(triggers.contains("coder"));
+        assert!(triggers.contains("CODE"));
+        assert!(!triggers.contains("unknown"));
+    }
+
+    #[test]
+    fn resolve_returns_configured_prompt_and_limit() {
+        let triggers = definitions();
+        let (prompt, max_tokens) = triggers.resolve("code");
+        assert_eq!(prompt, "coding assistant");
+        assert_eq!(max_tokens, 1000);
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_names() {
+        let mut triggers = definitions();
+        triggers.triggers.push(TriggerDef {
+            name: "CODE".to_string(),
+            aliases: vec![],
+            prompt: "duplicate".to_string(),
+            max_tokens: None,
+        });
+        assert!(triggers.validate().is_err());
+    }
+
+    #[test]
+    fn help_lists_local_commands() {
+        let text = definitions().help_text("@@");
+        assert!(text.contains("@@help"));
+        assert!(text.contains("@@coder (aliases: code)"));
     }
 }

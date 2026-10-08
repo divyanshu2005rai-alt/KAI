@@ -9,6 +9,7 @@
 // Creates a default config file if none exists.
 // ============================================================
 
+use anyhow::bail;
 use anyhow::{Context, Result};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -20,31 +21,101 @@ use std::path::PathBuf;
 pub struct Config {
     pub general: GeneralConfig,
     pub providers: ProvidersConfig,
+    #[serde(default)]
+    pub routing: RoutingConfig,
     pub injection: InjectionConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
-    /// The prefix that triggers KAI (default: ";;")
+    /// The prefix that triggers KAI (default: "@@")
     pub trigger_prefix: String,
-    /// How to terminate a prompt — "enter" is the only mode in Phase 1
+    /// How to terminate a prompt — "alt" is the default mode in Phase 1
     pub terminator: String,
     /// Maximum seconds to wait for an AI response before giving up
     pub timeout_seconds: u64,
+    /// Maximum prompt characters accepted before dispatch.
+    #[serde(default = "default_max_prompt_chars")]
+    pub max_prompt_chars: usize,
+    /// Number of recent user/assistant turns retained in memory.
+    #[serde(default = "default_context_turns")]
+    pub context_turns: usize,
+    /// Whether to include selected text in provider requests. Disabled by default
+    /// because selection may contain passwords or other private data.
+    #[serde(default)]
+    pub include_selected_text: bool,
+    /// Request streamed output when the selected provider supports it.
+    /// KAI still injects only the completed response into the target app.
+    #[serde(default)]
+    pub stream_responses: bool,
+}
+
+fn default_max_prompt_chars() -> usize {
+    12_000
+}
+
+fn default_context_turns() -> usize {
+    10
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProvidersConfig {
+    #[serde(default)]
     pub active_provider: Option<String>,
+    #[serde(default)]
     pub gemini: Option<GeminiConfig>,
+    #[serde(default)]
+    pub openai_compatible: Option<OpenAiCompatibleConfig>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingConfig {
+    /// "auto", "cloud", or "local".
+    #[serde(default = "default_routing_strategy")]
+    pub strategy: String,
+    /// Prefer the configured OpenAI-compatible endpoint in auto mode.
+    #[serde(default)]
+    pub local_first: bool,
+    /// Try another configured route after a provider failure.
+    #[serde(default = "default_routing_fallback")]
+    pub fallback: bool,
+}
 
+impl Default for RoutingConfig {
+    fn default() -> Self {
+        Self {
+            strategy: default_routing_strategy(),
+            local_first: false,
+            fallback: default_routing_fallback(),
+        }
+    }
+}
+
+fn default_routing_strategy() -> String {
+    "auto".to_string()
+}
+
+fn default_routing_fallback() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeminiConfig {
     pub api_key: Option<String>,
     pub default_model: Option<String>,
+}
+
+/// Configuration for OpenAI-compatible APIs such as Groq, Qwen-compatible
+/// gateways, Ollama, and LM Studio. Keeping this generic avoids coupling the
+/// application to one vendor when new providers are added later.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiCompatibleConfig {
+    #[serde(default)]
+    pub api_key: Option<String>,
+    pub base_url: String,
+    pub default_model: String,
+    #[serde(default)]
+    pub env_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,9 +130,13 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             general: GeneralConfig {
-                trigger_prefix: "//".to_string(),
+                trigger_prefix: "@@".to_string(),
                 terminator: "alt".to_string(),
                 timeout_seconds: 30,
+                max_prompt_chars: 12_000,
+                context_turns: 10,
+                include_selected_text: false,
+                stream_responses: false,
             },
             providers: ProvidersConfig {
                 active_provider: Some("auto".to_string()),
@@ -69,6 +144,12 @@ impl Default for Config {
                     api_key: None,
                     default_model: Some("gemini-2.5-flash".to_string()),
                 }),
+                openai_compatible: None,
+            },
+            routing: RoutingConfig {
+                strategy: "auto".to_string(),
+                local_first: false,
+                fallback: true,
             },
             injection: InjectionConfig {
                 clipboard_threshold: 200,
@@ -110,8 +191,62 @@ impl Config {
         let config: Config = toml::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {:?}", config_path))?;
 
+        config.validate()?;
+
         info!("Config loaded from {:?}", config_path);
         Ok(config)
+    }
+
+    /// Validate and atomically persist the configuration.
+    pub fn save(&self) -> Result<()> {
+        self.validate()?;
+        let path = Self::config_file();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create config directory: {:?}", parent))?;
+        }
+
+        let content = toml::to_string_pretty(self).context("Failed to serialize configuration")?;
+        let temp_path = path.with_extension("toml.tmp");
+        fs::write(&temp_path, content)
+            .with_context(|| format!("Failed to write temporary config: {:?}", temp_path))?;
+        fs::rename(&temp_path, &path)
+            .with_context(|| format!("Failed to replace configuration: {:?}", path))?;
+        info!("Configuration saved to {:?}", path);
+        Ok(())
+    }
+
+    /// Validates settings that could otherwise cause confusing runtime
+    /// behavior or unsafe/inoperable input handling.
+    pub fn validate(&self) -> Result<()> {
+        if self.general.trigger_prefix.is_empty() {
+            bail!("general.trigger_prefix must not be empty");
+        }
+        if self.general.timeout_seconds == 0 || self.general.timeout_seconds > 600 {
+            bail!("general.timeout_seconds must be between 1 and 600");
+        }
+        if self.general.max_prompt_chars < 100 || self.general.max_prompt_chars > 1_000_000 {
+            bail!("general.max_prompt_chars must be between 100 and 1,000,000");
+        }
+        if self.general.context_turns > 100 {
+            bail!("general.context_turns must be 100 or less");
+        }
+        if !matches!(
+            self.routing.strategy.to_ascii_lowercase().as_str(),
+            "auto" | "cloud" | "local"
+        ) {
+            bail!("routing.strategy must be auto, cloud, or local");
+        }
+        if self.general.terminator.to_lowercase() != "alt" {
+            bail!("general.terminator must currently be 'alt'");
+        }
+        if self.injection.clipboard_threshold == 0 {
+            bail!("injection.clipboard_threshold must be greater than 0");
+        }
+        if self.injection.backspace_delay_ms > 1000 {
+            bail!("injection.backspace_delay_ms must be 1000 or less");
+        }
+        Ok(())
     }
 
     /// Creates a default config file with comments explaining each option.
@@ -127,7 +262,7 @@ impl Config {
 
 [general]
 # The prefix that activates KAI. Type this prefix anywhere to start a trigger.
-trigger_prefix = "//"
+trigger_prefix = "@@"
 
 # How to terminate a prompt. Press ALT key to send.
 terminator = "alt"
@@ -135,9 +270,29 @@ terminator = "alt"
 # Maximum seconds to wait for an AI response.
 timeout_seconds = 30
 
+# Maximum prompt characters accepted before dispatch.
+max_prompt_chars = 12000
+
+# Recent user/assistant turns retained in memory.
+context_turns = 10
+
+# Copy selected text into the AI request. Disabled by default for privacy.
+include_selected_text = false
+
+# Request streamed output when supported. KAI injects only the final response.
+stream_responses = false
+
 [providers.gemini]
 # api_key = "your-gemini-key-here"
 default_model = "gemini-2.5-flash"
+
+[routing]
+# Strategy: "auto", "cloud", or "local".
+strategy = "auto"
+# Prefer [providers.openai_compatible] in auto mode.
+local_first = false
+# Try another configured route after a provider failure.
+fallback = true
 
 [injection]
 # Text longer than this many characters uses clipboard paste (faster).
@@ -152,8 +307,42 @@ backspace_delay_ms = 5
             .with_context(|| format!("Failed to write default config: {:?}", path))?;
 
         info!("Default config created at {:?}", path);
-        warn!("Edit {:?} to set your API key, or set GROQ_API_KEY / GEMINI_API_KEY env variable.", path);
+        warn!(
+            "Edit {:?} to set your API key, or set GROQ_API_KEY / GEMINI_API_KEY env variable.",
+            path
+        );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_is_valid() {
+        assert!(Config::default().validate().is_ok());
+    }
+
+    #[test]
+    fn empty_prefix_is_rejected() {
+        let mut config = Config::default();
+        config.general.trigger_prefix.clear();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn unsupported_terminator_is_rejected() {
+        let mut config = Config::default();
+        config.general.terminator = "enter".to_string();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn default_config_serializes() {
+        let text = toml::to_string(&Config::default()).expect("default config should serialize");
+        assert!(text.contains("trigger_prefix"));
+        assert!(text.contains("active_provider"));
     }
 }

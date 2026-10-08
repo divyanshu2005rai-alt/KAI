@@ -19,6 +19,8 @@ windows-sys = { version = "0.60", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_Security_Credentials",
 ] }
 
 # Text injection (keyboard simulation)
@@ -62,6 +64,10 @@ dirs = "5"
 
 # String utilities
 unicode-segmentation = "1"
+
+# Windows system-tray controls; kept behind the tray adapter module.
+tray-icon = "0.25.1"
+rpassword = "7"
 
 [profile.release]
 opt-level = 3

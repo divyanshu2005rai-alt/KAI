@@ -89,7 +89,10 @@ impl AiProvider for GeminiProvider {
         &self.primary_model
     }
 
-    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+    async fn complete(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<CompletionResponse, ProviderError> {
         // Models to try in sequence if one hits free quota limit (429)
         let candidate_models = vec![
             self.primary_model.as_str(),
@@ -99,6 +102,8 @@ impl AiProvider for GeminiProvider {
         ];
 
         let mut last_error = None;
+        let history = request.history.clone();
+        let user_prompt = request.user_prompt.clone();
 
         for model in candidate_models {
             let url = format!(
@@ -106,18 +111,34 @@ impl AiProvider for GeminiProvider {
                 model, self.api_key
             );
 
+            let mut contents = history
+                .clone()
+                .into_iter()
+                .map(|message| GeminiContent {
+                    role: if message.role == "assistant" {
+                        "model".to_string()
+                    } else {
+                        "user".to_string()
+                    },
+                    parts: vec![GeminiPart {
+                        text: message.content,
+                    }],
+                })
+                .collect::<Vec<_>>();
+            contents.push(GeminiContent {
+                role: "user".to_string(),
+                parts: vec![GeminiPart {
+                    text: user_prompt.clone(),
+                }],
+            });
+
             let body = GeminiRequest {
                 system_instruction: Some(GeminiSystemInstruction {
                     parts: vec![GeminiPart {
                         text: request.system_prompt.clone(),
                     }],
                 }),
-                contents: vec![GeminiContent {
-                    role: "user".to_string(),
-                    parts: vec![GeminiPart {
-                        text: request.user_prompt.clone(),
-                    }],
-                }],
+                contents,
             };
 
             debug!("POST Gemini request with model {}", model);
@@ -141,7 +162,10 @@ impl AiProvider for GeminiProvider {
             info!("Gemini response status for {}: {}", model, status);
 
             if status.as_u16() == 429 {
-                warn!("Model {} hit daily free quota limit (429) — trying fallback model...", model);
+                warn!(
+                    "Model {} hit daily free quota limit (429) — trying fallback model...",
+                    model
+                );
                 last_error = Some(ProviderError::RateLimit);
                 continue; // Try next model!
             }
@@ -149,6 +173,15 @@ impl AiProvider for GeminiProvider {
             if !status.is_success() {
                 let status_u16 = status.as_u16();
                 let error_text = response.text().await.unwrap_or_default();
+                let lower_error = error_text.to_lowercase();
+                if status_u16 == 413
+                    || lower_error.contains("context length")
+                    || lower_error.contains("too many tokens")
+                    || lower_error.contains("maximum context")
+                    || lower_error.contains("prompt is too long")
+                {
+                    return Err(ProviderError::InputTooLarge);
+                }
                 last_error = Some(ProviderError::Api {
                     status: status_u16,
                     message: error_text,

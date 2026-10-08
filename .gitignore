@@ -1,0 +1,16 @@
+# Rust build output
+/target/
+/.kai-target/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+
+# Local logs
+*.log

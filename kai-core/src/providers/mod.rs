@@ -6,6 +6,7 @@
 // this trait, enabling easy swapping and multi-provider support.
 // ============================================================
 
+pub mod factory;
 pub mod gemini;
 pub mod openai;
 
@@ -20,8 +21,20 @@ pub struct CompletionRequest {
     pub system_prompt: String,
     /// The user's actual prompt/query
     pub user_prompt: String,
+    /// Recent conversation turns, bounded by application policy.
+    #[serde(default)]
+    pub history: Vec<ConversationMessage>,
     /// Maximum tokens in the response (None = provider default)
     pub max_tokens: Option<u32>,
+    /// Whether the provider should use its streaming transport when available.
+    #[serde(default)]
+    pub stream: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationMessage {
+    pub role: String,
+    pub content: String,
 }
 
 /// Token usage statistics from the provider.
@@ -61,6 +74,9 @@ pub enum ProviderError {
     #[error("Rate limited — too many requests")]
     RateLimit,
 
+    #[error("Input is too large for the selected model")]
+    InputTooLarge,
+
     #[error("No content in response")]
     NoContent,
 }
@@ -75,5 +91,21 @@ pub trait AiProvider: Send + Sync {
     fn model(&self) -> &str;
 
     /// Send a completion request and await the full response.
-    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError>;
+    async fn complete(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<CompletionResponse, ProviderError>;
+
+    /// Complete using a streaming transport when the provider supports it.
+    /// Providers without streaming support safely fall back to `complete`.
+    async fn complete_stream(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<CompletionResponse, ProviderError> {
+        self.complete(request).await
+    }
+
+    fn supports_streaming(&self) -> bool {
+        false
+    }
 }

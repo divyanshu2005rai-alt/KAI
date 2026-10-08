@@ -9,7 +9,7 @@ KAI is a lightweight background utility that runs quietly in the background and 
 Type a trigger pattern anywhere, press Alt, and the response appears in place:
 
 ```
-//ask what is the difference between TCP and UDP
+@@ask what is the difference between TCP and UDP
 
 → TCP is connection-oriented and guarantees delivery. UDP is connectionless
   and faster but doesn't guarantee delivery. TCP is used for web browsing
@@ -34,7 +34,7 @@ Type a trigger pattern anywhere, press Alt, and the response appears in place:
 
 | Trigger | Purpose | System Prompt |
 |:---|:---|:---|
-| `//ask` | General AI assistant | Helpful, concise answers |
+| `@@ask` | General AI assistant | Helpful, concise answers |
 | `//coder` | Programming assistant | Expert coding help with examples |
 | `//fix` | Writing editor | Improve grammar, clarity, tone |
 | `//explain` | Explainer | Simplified explanations with analogies |
@@ -68,7 +68,7 @@ cargo build --release
 $env:GROQ_API_KEY = "[ENCRYPTION_KEY]"
 
 # Start KAI
-.\target\release\kai.exe
+.\target\x86_64-pc-windows-gnu\release\kai.exe
 ```
 
 Or create a `.env` style script:
@@ -76,7 +76,7 @@ Or create a `.env` style script:
 ```powershell
 # start-kai.ps1
 $env:GROQ_API_KEY = "[ENCRYPTION_KEY]"
-.\target\release\kai.exe
+.\target\x86_64-pc-windows-gnu\release\kai.exe
 ```
 
 ### Configuration
@@ -88,6 +88,25 @@ On first run, KAI creates a config file at:
 
 Edit it to change models, base URLs, or injection settings.
 
+When KAI is running from a terminal, the control channel currently accepts:
+
+- `p` — pause or resume capture and AI requests
+- `s` — show active/paused and processing status
+- `q` — quit KAI
+
+The system tray also provides **Configure KAI**, which opens the validated
+settings flow, and **Open configuration** for direct advanced editing.
+
+These controls use the same shared state that the future system-tray UI will
+use, so the UI can be added without changing the trigger pipeline.
+
+The provider layer is intentionally extensible. `active_provider = "auto"`
+keeps the current Groq/Gemini behavior. The generic `openai-compatible`
+option is reserved for compatible cloud endpoints and future local Qwen,
+Ollama, or LM Studio backends. Vision and file input can later be added to
+the provider request model without changing trigger detection or text
+injection.
+
 ## Architecture
 
 ```
@@ -96,32 +115,57 @@ kai-core/
 │   ├── main.rs         # Entry point, task orchestration
 │   ├── listener.rs     # Global keyboard listener (rdev)
 │   ├── trigger.rs      # Rolling buffer & state machine
-│   ├── parser.rs       # "//command prompt" → ParsedCommand
+│   ├── parser.rs       # "@@command prompt" → ParsedCommand
 │   ├── injector.rs     # Text injection (enigo + arboard)
 │   ├── config.rs       # TOML config loading
 │   ├── state.rs        # Shared processing state
+│   ├── tray.rs         # System-tray controls and config launcher
 │   └── providers/
-│       ├── mod.rs      # AiProvider trait
-│       └── openai.rs   # OpenAI implementation
+│       ├── mod.rs      # AiProvider trait and shared request types
+│       ├── factory.rs  # Config → provider boundary
+│       ├── openai.rs   # OpenAI-compatible implementation
+│       └── gemini.rs   # Gemini implementation
 ```
 
 ## Roadmap
 
-- **Phase 1** ✅ — Core loop: detect → call AI → inject
-- **Phase 2** — Custom commands via config file
-- **Phase 3** — Multi-provider: Anthropic, Gemini, Ollama
-- **Phase 4** — System tray UI + settings window + OS keyring
+- **Phase 0** ✅ — Input stabilization, error handling, validation, and regression tests
+- **Phase 1** ✅ — Configuration foundation and validation
+- **Phase 2** ✅ — Core loop and custom commands via `triggers.yml`
+- **Phase 3** — Multi-provider foundation: Gemini and OpenAI-compatible endpoints
+- **Phase 4** — System tray controls (in progress) + settings window + OS keyring
 - **Phase 5** — Context awareness (selected text, active app)
 - **Phase 6** — Streaming, model routing, local models
 
+To save credentials securely without putting them in a project file, run:
+
+```powershell
+.\target\x86_64-pc-windows-gnu\release\kai.exe --setup-credentials
+```
+
+To edit validated KAI settings interactively, run:
+
+```powershell
+.\target\x86_64-pc-windows-gnu\release\kai.exe --configure
+```
+
 ## Privacy & Security
 
-- KAI's rolling buffer is max ~10 characters — only enough to detect `//`
+- KAI's rolling buffer is max ~10 characters — only enough to detect `@@`
 - No keystrokes are persisted to disk in Idle mode
 - Full prompt capture only activates **after** a valid trigger is matched
-- API keys are never logged or stored in plain text (use env var or OS keyring)
+- The last 10 conversation turns are kept in memory only and are not written to disk
+- API keys must be supplied through environment variables or OS credential storage; never commit them
+- Prompt contents are not written to logs
 - All AI requests go over HTTPS
 - No telemetry
+
+See [SECURITY.md](SECURITY.md) for the keyboard-hook privacy model and
+credential-handling policy.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the pipeline boundaries and rules
+for adding providers, local models, vision, context, and other operating
+systems.
 
 ## License
 

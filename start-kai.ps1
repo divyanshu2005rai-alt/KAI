@@ -1,6 +1,6 @@
 # KAI Startup Script (PowerShell)
 # ============================================================
-# Set your Groq or Gemini API key and run this script to start KAI.
+# Set GROQ_API_KEY or GEMINI_API_KEY in your user environment and run this script.
 # Usage: .\start-kai.ps1
 # ============================================================
 
@@ -12,13 +12,13 @@ $GeminiApiKey = $env:GEMINI_API_KEY
 $LogLevel = "info"
 
 # Path to the KAI binary
-$KaiBinary = Join-Path $PSScriptRoot "target\x86_64-pc-windows-gnu\debug\kai.exe"
+$KaiBinary = Join-Path $PSScriptRoot "target\x86_64-pc-windows-gnu\release\kai.exe"
 # ──────────────────────────────────────────────────────────
 
 # Validate setup
 if (-not (Test-Path $KaiBinary)) {
     Write-Host "ERROR: kai.exe not found at $KaiBinary" -ForegroundColor Red
-    Write-Host "Build it first with: cargo +stable-x86_64-pc-windows-gnu build" -ForegroundColor Yellow
+    Write-Host "Build it first with: cargo build --release" -ForegroundColor Yellow
     exit 1
 }
 
@@ -36,14 +36,14 @@ Write-Host "║          KAI — Universal AI Input Layer                  ║" 
 Write-Host "╠══════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
 Write-Host "║  Type any of these triggers in ANY application:          ║" -ForegroundColor White
 Write-Host "║                                                           ║" -ForegroundColor White
-Write-Host "║  ;;ask   <question>     →  General AI assistant          ║" -ForegroundColor Green
-Write-Host "║  ;;coder <question>     →  Programming assistant         ║" -ForegroundColor Green
-Write-Host "║  ;;fix   <text>         →  Improve writing               ║" -ForegroundColor Green
-Write-Host "║  ;;explain <topic>      →  Simple explanation            ║" -ForegroundColor Green
-Write-Host "║  ;;translate <text>     →  English ↔ Spanish             ║" -ForegroundColor Green
-Write-Host "║  ;;summarize <text>     →  Concise summary               ║" -ForegroundColor Green
-Write-Host "║  ;;email <text>         →  Professional email            ║" -ForegroundColor Green
-Write-Host "║  ;;tweet <text>         →  Social media post             ║" -ForegroundColor Green
+Write-Host "║  @@ask   <question>     →  General AI assistant          ║" -ForegroundColor Green
+Write-Host "║  @@coder <question>     →  Programming assistant         ║" -ForegroundColor Green
+Write-Host "║  @@fix   <text>         →  Improve writing               ║" -ForegroundColor Green
+Write-Host "║  @@explain <topic>      →  Simple explanation            ║" -ForegroundColor Green
+Write-Host "║  @@translate <text>     →  English ↔ Spanish             ║" -ForegroundColor Green
+Write-Host "║  @@summarize <text>     →  Concise summary               ║" -ForegroundColor Green
+Write-Host "║  @@email <text>         →  Professional email            ║" -ForegroundColor Green
+Write-Host "║  @@tweet <text>         →  Social media post             ║" -ForegroundColor Green
 Write-Host "║                                                           ║" -ForegroundColor White
 Write-Host "║  Press ALT to send prompt. Press ESC to cancel.          ║" -ForegroundColor Yellow
 Write-Host "║  Press Ctrl+C in this window to quit KAI.                ║" -ForegroundColor Yellow
