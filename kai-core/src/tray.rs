@@ -138,15 +138,54 @@ fn launch_configure() -> Result<()> {
 }
 
 fn tray_icon_rgba() -> Vec<u8> {
-    // Simple blue KAI marker; keeping the icon generated avoids a binary asset
-    // dependency until the product branding is finalized.
-    let mut pixels = Vec::with_capacity(16 * 16 * 4);
-    for y in 0..16 {
-        for x in 0..16 {
-            let border = x == 0 || y == 0 || x == 15 || y == 15;
-            let blue = if border { 180 } else { 255 };
-            pixels.extend_from_slice(&[32, 96, blue, 255]);
+    // Keep the icon generated so the tray adapter has no binary asset
+    // dependency. Transparent corners plus alternating rings keep it legible
+    // against both light and dark Windows taskbars.
+    const SIZE: usize = 16;
+    const CENTER: f32 = 7.5;
+    const BLUE: [u8; 3] = [35, 105, 210];
+    const WHITE: [u8; 3] = [248, 250, 255];
+
+    let mut pixels = Vec::with_capacity(SIZE * SIZE * 4);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - CENTER;
+            let dy = y as f32 - CENTER;
+            let radius = (dx * dx + dy * dy).sqrt();
+
+            let (color, alpha) = if radius > 7.55 {
+                ([0, 0, 0], 0)
+            } else if radius > 6.25 {
+                (BLUE, 255)
+            } else if radius > 5.05 {
+                (WHITE, 255)
+            } else if radius > 3.65 {
+                (BLUE, 255)
+            } else {
+                (WHITE, 255)
+            };
+
+            pixels.extend_from_slice(&[color[0], color[1], color[2], alpha]);
         }
     }
     pixels
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tray_icon_rgba;
+
+    #[test]
+    fn tray_icon_has_expected_dimensions_and_transparent_corners() {
+        let pixels = tray_icon_rgba();
+        assert_eq!(pixels.len(), 16 * 16 * 4);
+        assert_eq!(&pixels[0..4], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn tray_icon_center_is_white() {
+        let pixels = tray_icon_rgba();
+        let center = (7 * 16 + 7) * 4;
+        assert_eq!(&pixels[center..center + 4], &[248, 250, 255, 255]);
+    }
 }
