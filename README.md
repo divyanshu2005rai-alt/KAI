@@ -46,7 +46,7 @@ Type a trigger pattern anywhere, press Alt, and the response appears in place:
 ## Setup
 
 ### Prerequisites
-- Windows 10/11 (macOS and Linux support coming in Phase 5)
+- Windows 10/11 (macOS and Linux support are planned)
 - An Groq key ([get one here](https://console.groq.com/keys))
 
 ### Install
@@ -160,16 +160,15 @@ kai-core/
 │       └── gemini.rs   # Gemini implementation
 ```
 
-## Roadmap
+## Current status
 
-- **Phase 0** ✅ — Input stabilization, error handling, validation, and regression tests
-- **Phase 1** ✅ — Configuration foundation and validation
-- **Phase 2** ✅ — Core loop and custom commands via `triggers.yml`
-- **Phase 3** ✅ — Multi-provider foundation: Gemini, Groq/OpenAI-compatible endpoints, and provider fallback
-- **Phase 4** ✅ — System tray controls, generated tray icon, interactive configuration, and Windows Credential Manager support
-- **Phase 5** ✅ — Context awareness foundation: active-window tracking, optional selected-text capture, and bounded in-memory conversation history
-- **Phase 6** 🟡 — Partial: streaming support, provider routing, and OpenAI-compatible local endpoints are implemented; local-model packaging and broader cross-platform support remain
-- **Future** — Qwen-specific integration, vision/image prompts, installers, and macOS/Linux support
+KAI currently provides global trigger capture, configurable commands, cloud and
+OpenAI-compatible provider routing, system-tray controls, secure Windows
+credential storage, optional selected-text context, bounded in-memory history,
+streaming support, and exact clipboard-based response injection.
+
+The next planned capabilities are Qwen-specific integration, vision/image
+prompts, installers, and macOS/Linux support.
 
 To save credentials securely without putting them in a project file, run:
 
