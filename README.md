@@ -165,10 +165,11 @@ kai-core/
 - **Phase 0** ✅ — Input stabilization, error handling, validation, and regression tests
 - **Phase 1** ✅ — Configuration foundation and validation
 - **Phase 2** ✅ — Core loop and custom commands via `triggers.yml`
-- **Phase 3** — Multi-provider foundation: Gemini and OpenAI-compatible endpoints
-- **Phase 4** — System tray controls (in progress) + settings window + OS keyring
-- **Phase 5** — Context awareness (selected text, active app)
-- **Phase 6** — Streaming, model routing, local models
+- **Phase 3** ✅ — Multi-provider foundation: Gemini, Groq/OpenAI-compatible endpoints, and provider fallback
+- **Phase 4** ✅ — System tray controls, generated tray icon, interactive configuration, and Windows Credential Manager support
+- **Phase 5** ✅ — Context awareness foundation: active-window tracking, optional selected-text capture, and bounded in-memory conversation history
+- **Phase 6** 🟡 — Partial: streaming support, provider routing, and OpenAI-compatible local endpoints are implemented; local-model packaging and broader cross-platform support remain
+- **Future** — Qwen-specific integration, vision/image prompts, installers, and macOS/Linux support
 
 To save credentials securely without putting them in a project file, run:
 
