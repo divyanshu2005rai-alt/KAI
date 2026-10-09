@@ -9,7 +9,7 @@ KAI is a lightweight background utility that runs quietly in the background and 
 Type a trigger pattern anywhere, press Alt, and the response appears in place:
 
 ```
-@@ask what is the difference between TCP and UDP
+//ask what is the difference between TCP and UDP
 
 → TCP is connection-oriented and guarantees delivery. UDP is connectionless
   and faster but doesn't guarantee delivery. TCP is used for web browsing
@@ -34,7 +34,7 @@ Type a trigger pattern anywhere, press Alt, and the response appears in place:
 
 | Trigger | Purpose | System Prompt |
 |:---|:---|:---|
-| `@@ask` | General AI assistant | Helpful, concise answers |
+| `//ask` | General AI assistant | Helpful, concise answers |
 | `//coder` | Programming assistant | Expert coding help with examples |
 | `//fix` | Writing editor | Improve grammar, clarity, tone |
 | `//explain` | Explainer | Simplified explanations with analogies |
@@ -115,7 +115,7 @@ kai-core/
 │   ├── main.rs         # Entry point, task orchestration
 │   ├── listener.rs     # Global keyboard listener (rdev)
 │   ├── trigger.rs      # Rolling buffer & state machine
-│   ├── parser.rs       # "@@command prompt" → ParsedCommand
+│   ├── parser.rs       # "//command prompt" → ParsedCommand
 │   ├── injector.rs     # Text injection (enigo + arboard)
 │   ├── config.rs       # TOML config loading
 │   ├── state.rs        # Shared processing state
@@ -151,7 +151,7 @@ To edit validated KAI settings interactively, run:
 
 ## Privacy & Security
 
-- KAI's rolling buffer is max ~10 characters — only enough to detect `@@`
+- KAI's rolling buffer is max ~10 characters — only enough to detect `//`
 - No keystrokes are persisted to disk in Idle mode
 - Full prompt capture only activates **after** a valid trigger is matched
 - The last 10 conversation turns are kept in memory only and are not written to disk

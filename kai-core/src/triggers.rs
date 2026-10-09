@@ -5,7 +5,7 @@
 // Auto-creates the file with all defaults on first run.
 //
 // Each trigger entry in the YAML has:
-//   name:       the command word (e.g. "ask" -> type "@@ask ...")
+//   name:       the command word (e.g. "ask" -> type "//ask ...")
 //   aliases:    optional list of alternative names
 //   prompt:     the AI system instruction for this trigger
 //   max_tokens: optional max response length (default: 2000)
@@ -166,11 +166,11 @@ impl TriggersFile {
 #
 # How to use:
 #   In any text field, type the prefix followed by a command and your prompt.
-#   Example: "@@ask what is the capital of France"
+#   Example: "//ask what is the capital of France"
 #   Then press ALT to send.
 #
 # Trigger format:
-#   name:       The command word (e.g. "ask" -> type "@@ask ...")
+#   name:       The command word (e.g. "ask" -> type "//ask ...")
 #   aliases:    Other names that do the same thing (optional)
 #   prompt:     The AI system instruction for this trigger
 #   max_tokens: Max response length (optional, default: 2000)
@@ -310,8 +310,8 @@ mod tests {
 
     #[test]
     fn help_lists_local_commands() {
-        let text = definitions().help_text("@@");
-        assert!(text.contains("@@help"));
-        assert!(text.contains("@@coder (aliases: code)"));
+        let text = definitions().help_text("//");
+        assert!(text.contains("//help"));
+        assert!(text.contains("//coder (aliases: code)"));
     }
 }

@@ -36,14 +36,14 @@ Write-Host "║          KAI — Universal AI Input Layer                  ║" 
 Write-Host "╠══════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
 Write-Host "║  Type any of these triggers in ANY application:          ║" -ForegroundColor White
 Write-Host "║                                                           ║" -ForegroundColor White
-Write-Host "║  @@ask   <question>     →  General AI assistant          ║" -ForegroundColor Green
-Write-Host "║  @@coder <question>     →  Programming assistant         ║" -ForegroundColor Green
-Write-Host "║  @@fix   <text>         →  Improve writing               ║" -ForegroundColor Green
-Write-Host "║  @@explain <topic>      →  Simple explanation            ║" -ForegroundColor Green
-Write-Host "║  @@translate <text>     →  English ↔ Spanish             ║" -ForegroundColor Green
-Write-Host "║  @@summarize <text>     →  Concise summary               ║" -ForegroundColor Green
-Write-Host "║  @@email <text>         →  Professional email            ║" -ForegroundColor Green
-Write-Host "║  @@tweet <text>         →  Social media post             ║" -ForegroundColor Green
+Write-Host "║  //ask   <question>     →  General AI assistant          ║" -ForegroundColor Green
+Write-Host "║  //coder <question>     →  Programming assistant         ║" -ForegroundColor Green
+Write-Host "║  //fix   <text>         →  Improve writing               ║" -ForegroundColor Green
+Write-Host "║  //explain <topic>      →  Simple explanation            ║" -ForegroundColor Green
+Write-Host "║  //translate <text>     →  English ↔ Spanish             ║" -ForegroundColor Green
+Write-Host "║  //summarize <text>     →  Concise summary               ║" -ForegroundColor Green
+Write-Host "║  //email <text>         →  Professional email            ║" -ForegroundColor Green
+Write-Host "║  //tweet <text>         →  Social media post             ║" -ForegroundColor Green
 Write-Host "║                                                           ║" -ForegroundColor White
 Write-Host "║  Press ALT to send prompt. Press ESC to cancel.          ║" -ForegroundColor Yellow
 Write-Host "║  Press Ctrl+C in this window to quit KAI.                ║" -ForegroundColor Yellow

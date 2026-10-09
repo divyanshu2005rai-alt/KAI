@@ -83,7 +83,7 @@ fn main() -> Result<()> {
     info!("Trigger prefix: \"{}\"", config.general.trigger_prefix);
     info!("Listening for triggers...");
     info!("");
-    info!("Try typing  @@ask <your question>  in any application, then press ALT.");
+    info!("Try typing  //ask <your question>  in any application, then press ALT.");
     info!("Press Ctrl+C to exit.");
 
     // Shared application state

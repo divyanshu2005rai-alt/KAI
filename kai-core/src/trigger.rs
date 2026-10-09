@@ -23,7 +23,7 @@ use crate::state::AppState;
 /// A fully captured trigger, ready for AI dispatch.
 #[derive(Debug, Clone)]
 pub struct CapturedTrigger {
-    /// The raw text as the user typed it (e.g. "@@ask explain recursion")
+    /// The raw text as the user typed it (e.g. "//ask explain recursion")
     pub raw_text: String,
     /// Total number of visible characters typed (for backspace deletion)
     pub char_count: usize,
@@ -102,7 +102,7 @@ impl TriggerEngine {
                     self.idle_buffer.pop_front();
                 }
 
-                // Check if buffer ends with our trigger prefix (e.g. "@@")
+                // Check if buffer ends with our trigger prefix (e.g. "//")
                 let buffer_str: String = self.idle_buffer.iter().collect();
                 if buffer_str.ends_with(&self.config.general.trigger_prefix) {
                     info!("⚡ Trigger prefix detected — entering capture mode");
@@ -238,8 +238,8 @@ mod tests {
         engine.handle_event(KeyEvent::Alt);
 
         let captured = rx.try_recv().expect("trigger should be sent");
-        assert_eq!(captured.raw_text, "@@ask hello");
-        assert_eq!(captured.char_count, "@@ask hello".chars().count());
+        assert_eq!(captured.raw_text, "//ask hello");
+        assert_eq!(captured.char_count, "//ask hello".chars().count());
     }
 
     #[test]
@@ -254,8 +254,8 @@ mod tests {
         engine.handle_event(KeyEvent::Alt);
 
         let captured = rx.try_recv().expect("trigger should be sent");
-        assert_eq!(captured.raw_text, "@@ask hell");
-        assert_eq!(captured.char_count, "@@ask hell".chars().count());
+        assert_eq!(captured.raw_text, "//ask hell");
+        assert_eq!(captured.char_count, "//ask hell".chars().count());
     }
 
     #[test]
@@ -283,7 +283,7 @@ mod tests {
         engine.handle_event(KeyEvent::Alt);
 
         let captured = rx.try_recv().expect("trigger should be sent");
-        assert_eq!(captured.raw_text, "@@ask first\nsecond");
+        assert_eq!(captured.raw_text, "//ask first\nsecond");
     }
 
     #[test]

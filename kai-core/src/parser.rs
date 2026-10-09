@@ -2,7 +2,7 @@
 // parser.rs — Trigger text → structured command
 //
 // Parses raw captured text like:
-//   "@@ask explain recursion"
+//   "//ask explain recursion"
 //   "//coder write a bubble sort in Python"
 //   "//fix I wanted to ask if you could send the report"
 //
@@ -25,7 +25,7 @@ pub struct ParsedCommand {
 /// # Examples
 ///
 /// ```
-/// let parsed = parse_trigger("@@ask explain recursion").unwrap();
+/// let parsed = parse_trigger("//ask explain recursion").unwrap();
 /// assert_eq!(parsed.command, "ask");
 /// assert_eq!(parsed.prompt, "explain recursion");
 /// ```
@@ -57,41 +57,41 @@ mod tests {
 
     #[test]
     fn test_basic_ask() {
-        let p = parse_trigger("@@ask explain recursion").unwrap();
+        let p = parse_trigger("//ask explain recursion").unwrap();
         assert_eq!(p.command, "ask");
         assert_eq!(p.prompt, "explain recursion");
     }
 
     #[test]
     fn test_coder_command() {
-        let p = parse_trigger("@@coder write a bubble sort in Python").unwrap();
+        let p = parse_trigger("//coder write a bubble sort in Python").unwrap();
         assert_eq!(p.command, "coder");
         assert_eq!(p.prompt, "write a bubble sort in Python");
     }
 
     #[test]
     fn test_fix_command() {
-        let p = parse_trigger("@@fix I wanted to ask if you could send the report").unwrap();
+        let p = parse_trigger("//fix I wanted to ask if you could send the report").unwrap();
         assert_eq!(p.command, "fix");
         assert_eq!(p.prompt, "I wanted to ask if you could send the report");
     }
 
     #[test]
     fn test_command_only() {
-        let p = parse_trigger("@@summarize").unwrap();
+        let p = parse_trigger("//summarize").unwrap();
         assert_eq!(p.command, "summarize");
         assert_eq!(p.prompt, "");
     }
 
     #[test]
     fn test_empty() {
-        assert!(parse_trigger("@@").is_none());
+        assert!(parse_trigger("//").is_none());
         assert!(parse_trigger("").is_none());
     }
 
     #[test]
     fn test_uppercase_command() {
-        let p = parse_trigger("@@ASK what is rust").unwrap();
+        let p = parse_trigger("//ASK what is rust").unwrap();
         assert_eq!(p.command, "ask"); // normalized to lowercase
     }
 }

@@ -28,7 +28,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
-    /// The prefix that triggers KAI (default: "@@")
+    /// The prefix that triggers KAI (default: "//")
     pub trigger_prefix: String,
     /// How to terminate a prompt — "alt" is the default mode in Phase 1
     pub terminator: String,
@@ -130,7 +130,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             general: GeneralConfig {
-                trigger_prefix: "@@".to_string(),
+                trigger_prefix: "//".to_string(),
                 terminator: "alt".to_string(),
                 timeout_seconds: 30,
                 max_prompt_chars: 12_000,
@@ -262,7 +262,7 @@ impl Config {
 
 [general]
 # The prefix that activates KAI. Type this prefix anywhere to start a trigger.
-trigger_prefix = "@@"
+trigger_prefix = "//"
 
 # How to terminate a prompt. Press ALT key to send.
 terminator = "alt"

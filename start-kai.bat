@@ -22,14 +22,14 @@ echo   KAI — Universal AI Input Layer
 echo ============================================================
 echo.
 echo  Triggers available:
-echo    @@ask   ^<question^>  - General AI assistant
-echo    @@coder ^<question^>  - Programming helper
-echo    @@fix   ^<text^>      - Improve writing
-echo    @@explain ^<topic^>   - Clear explanation
-echo    @@translate ^<text^>  - Translator
-echo    @@summarize ^<text^>  - Concise summary
-echo    @@email ^<text^>      - Professional email
-echo    @@tweet ^<text^>      - Social media post
+echo    //ask   ^<question^>  - General AI assistant
+echo    //coder ^<question^>  - Programming helper
+echo    //fix   ^<text^>      - Improve writing
+echo    //explain ^<topic^>   - Clear explanation
+echo    //translate ^<text^>  - Translator
+echo    //summarize ^<text^>  - Concise summary
+echo    //email ^<text^>      - Professional email
+echo    //tweet ^<text^>      - Social media post
 echo.
 echo  Type trigger + prompt, then press ALT key to send!
 echo  Press ESC to cancel trigger.

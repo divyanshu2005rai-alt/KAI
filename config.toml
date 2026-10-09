@@ -4,7 +4,7 @@
 
 [general]
 # The prefix that activates KAI. Type this prefix anywhere to start a trigger.
-trigger_prefix = "@@"
+trigger_prefix = "//"
 
 # How to terminate a prompt. Press ALT to send.
 terminator = "alt"
