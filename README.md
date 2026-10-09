@@ -100,6 +100,39 @@ settings flow, and **Open configuration** for direct advanced editing.
 These controls use the same shared state that the future system-tray UI will
 use, so the UI can be added without changing the trigger pipeline.
 
+## Resource usage
+
+KAI is a small background utility, but its exact resource usage depends on the
+Windows desktop, provider, prompt size, and response size. The figures below
+are observations and guidance, not hard limits.
+
+| Resource | KAI's usage |
+|:---|:---|
+| Memory while idle | A local release build measured about **18.5 MB working set** and **4 MB private memory** in one Windows snapshot. Other machines may differ. |
+| Runtime memory guidance | Keep at least **50 MB of otherwise-free RAM** available for KAI itself. Cloud model memory is provider-side; local model memory is separate and can be many gigabytes. This is practical guidance, not a tested hard minimum. |
+| CPU while idle | The keyboard hook and tray remain active, but KAI does not run model inference locally. CPU rises temporarily while handling input, clipboard work, configuration, or a response. |
+| CPU during cloud requests | The model runs on the configured provider. KAI mainly waits for the HTTPS response and then injects the completed text. |
+| Network | No continuous stream is required. Network traffic occurs when a cloud AI request is sent. Request size depends on the prompt, optional selected text, and conversation history. |
+| Installed release binary | The tested Windows release executable was about **16.9 MiB**. This can change between builds and toolchains. |
+| Runtime configuration | The measured user configuration file was **692 bytes**. Trigger definitions and logs, if added later, can increase this. |
+| Build storage | Rust build output is much larger than the release executable because it contains dependencies and intermediate files. This checkout measured about **3.3 GiB** in `target/` and **2.2 GiB** in `.kai-target/`; these are local build caches, not runtime requirements. `target/` is generated locally and is not part of the repository. |
+| Local model usage | If an OpenAI-compatible local model is configured, the model server—not KAI—uses most of the RAM/VRAM required for inference. |
+
+KAI does not intentionally store prompts, keystrokes, or conversation history on
+disk. Conversation history is kept in memory only, with the configured default
+of 10 recent turns. Selecting `include_selected_text` can increase request
+size and may send selected private text to the configured provider.
+
+To measure KAI on your own Windows machine while it is running:
+
+```powershell
+Get-Process kai | Select-Object Id,CPU,WorkingSet64,PrivateMemorySize64,VirtualMemorySize64,StartTime,Path
+```
+
+`WorkingSet64` is the physical memory currently resident for the process.
+`PrivateMemorySize64` is memory private to KAI. Take one measurement while idle
+and another during a request; do not treat either reading as a universal limit.
+
 The provider layer is intentionally extensible. `active_provider = "auto"`
 keeps the current Groq/Gemini behavior. The generic `openai-compatible`
 option is reserved for compatible cloud endpoints and future local Qwen,

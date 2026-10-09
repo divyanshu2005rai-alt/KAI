@@ -28,6 +28,7 @@ pub enum KeyEvent {
     Escape,
     Backspace,
     Alt,
+    Paste,
     Other,
 }
 
@@ -121,16 +122,20 @@ unsafe extern "system" fn keyboard_proc(n_code: i32, w_param: WPARAM, l_param: L
             }
 
             let pressed = PRESSED_KEYS.get_or_init(|| Mutex::new(HashSet::new()));
-            if let Ok(mut keys) = pressed.lock() {
+            let ctrl_pressed = if let Ok(mut keys) = pressed.lock() {
                 // A key-down for a key already in this set is auto-repeat.
                 if !keys.insert(kb.vkCode) {
                     return CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param);
                 }
-            }
+                keys.contains(&(VK_CONTROL as u32))
+                    || keys.contains(&(VK_LCONTROL as u32))
+                    || keys.contains(&(VK_RCONTROL as u32))
+            } else {
+                false
+            };
 
             let vk_code = kb.vkCode;
-
-            let event = vk_to_key_event(vk_code);
+            let event = vk_to_key_event(vk_code, ctrl_pressed);
 
             // Send the event (non-blocking — drop if buffer full)
             let sender_ptr = SENDER.load(Ordering::SeqCst);
@@ -145,7 +150,14 @@ unsafe extern "system" fn keyboard_proc(n_code: i32, w_param: WPARAM, l_param: L
 }
 
 /// Maps a Windows Virtual Key code to our KeyEvent type.
-fn vk_to_key_event(vk: u32) -> KeyEvent {
+fn vk_to_key_event(vk: u32, ctrl_pressed: bool) -> KeyEvent {
+    // Ctrl+V inserts clipboard text without generating printable key events.
+    // Use the hook's own pressed-key state: Windows has not reliably updated
+    // GetAsyncKeyState yet while a low-level hook callback is running.
+    if ctrl_pressed && vk == b'V' as u32 {
+        return KeyEvent::Paste;
+    }
+
     match vk {
         // Alt key (VK_MENU = 0x12, VK_LMENU = 0xA4, VK_RMENU = 0xA5)
         vk if vk == VK_MENU as u32 || vk == VK_LMENU as u32 || vk == VK_RMENU as u32 => {
@@ -194,4 +206,17 @@ fn translate_printable_key(vk: u32) -> KeyEvent {
         .and_then(|text| text.chars().next())
         .map(KeyEvent::Char)
         .unwrap_or(KeyEvent::Other)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ctrl_v_is_always_reported_as_paste() {
+        assert!(matches!(
+            vk_to_key_event(b'V' as u32, true),
+            KeyEvent::Paste
+        ));
+    }
 }

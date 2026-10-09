@@ -152,7 +152,9 @@ impl Default for Config {
                 fallback: true,
             },
             injection: InjectionConfig {
-                clipboard_threshold: 200,
+                // Clipboard paste preserves punctuation, Unicode, and ordering
+                // across Windows applications better than simulated typing.
+                clipboard_threshold: 1,
                 backspace_delay_ms: 5,
             },
         }
@@ -295,9 +297,9 @@ local_first = false
 fallback = true
 
 [injection]
-# Text longer than this many characters uses clipboard paste (faster).
-# Text shorter than this uses simulated keystrokes (safer for all apps).
-clipboard_threshold = 200
+# Responses at or above this many characters use clipboard paste.
+# Keep this at 1 to preserve exact text across Windows applications.
+clipboard_threshold = 1
 
 # Delay between backspace keystrokes when erasing trigger text (milliseconds).
 backspace_delay_ms = 5

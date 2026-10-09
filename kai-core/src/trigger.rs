@@ -109,7 +109,11 @@ impl TriggerEngine {
                     self.enter_capture_mode();
                 }
             }
-            KeyEvent::Enter | KeyEvent::Escape | KeyEvent::Backspace | KeyEvent::Alt => {
+            KeyEvent::Enter
+            | KeyEvent::Escape
+            | KeyEvent::Backspace
+            | KeyEvent::Alt
+            | KeyEvent::Paste => {
                 self.idle_buffer.clear();
             }
             KeyEvent::Other => {
@@ -195,6 +199,15 @@ impl TriggerEngine {
                 }
             }
 
+            KeyEvent::Paste => {
+                // Read clipboard text only during an explicit active capture.
+                // Do not inspect clipboard contents during ordinary typing.
+                match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
+                    Ok(text) => self.append_pasted_text(&text),
+                    Err(error) => log::warn!("Could not read pasted prompt text: {error}"),
+                }
+            }
+
             KeyEvent::Other => {
                 // Arrow keys, function keys, etc. during capture — ignore
                 debug!("Ignoring non-char key during capture");
@@ -207,6 +220,12 @@ impl TriggerEngine {
         self.capture_buffer.clear();
         self.idle_buffer.clear();
         self.total_chars = 0;
+    }
+
+    fn append_pasted_text(&mut self, text: &str) {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.total_chars += normalized.chars().count();
+        self.capture_buffer.push_str(&normalized);
     }
 }
 
@@ -224,8 +243,10 @@ mod tests {
     }
 
     fn start_capture(engine: &mut TriggerEngine) {
-        engine.handle_event(KeyEvent::Char('@'));
-        engine.handle_event(KeyEvent::Char('@'));
+        let prefix = engine.config.general.trigger_prefix.clone();
+        for c in prefix.chars() {
+            engine.handle_event(KeyEvent::Char(c));
+        }
     }
 
     #[test]
@@ -284,6 +305,25 @@ mod tests {
 
         let captured = rx.try_recv().expect("trigger should be sent");
         assert_eq!(captured.raw_text, "//ask first\nsecond");
+    }
+
+    #[test]
+    fn pasted_prompt_text_is_captured_and_counted_for_replacement() {
+        let (mut engine, mut rx) = engine();
+        start_capture(&mut engine);
+        for c in "ask ".chars() {
+            engine.handle_event(KeyEvent::Char(c));
+        }
+        engine.append_pasted_text("explain this\r\nwith an example");
+        engine.handle_event(KeyEvent::Alt);
+
+        let captured = rx.try_recv().expect("pasted prompt should be sent");
+        assert_eq!(captured.raw_text, "//ask explain this\nwith an example");
+        assert_eq!(
+            captured.char_count,
+            captured.raw_text.chars().count(),
+            "replacement count must include the pasted text and normalized newlines"
+        );
     }
 
     #[test]
