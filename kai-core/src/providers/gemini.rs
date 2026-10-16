@@ -12,7 +12,7 @@ use log::{debug, info, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::{AiProvider, CompletionRequest, CompletionResponse, ProviderError, TokenUsage};
+use super::{AiProvider, CompletionRequest, CompletionResponse, ProviderError};
 
 // ── Request structures ──────────────────────────────────────
 
@@ -83,10 +83,6 @@ impl GeminiProvider {
 impl AiProvider for GeminiProvider {
     fn name(&self) -> &str {
         "Google Gemini"
-    }
-
-    fn model(&self) -> &str {
-        &self.primary_model
     }
 
     async fn complete(
@@ -222,7 +218,6 @@ impl AiProvider for GeminiProvider {
             info!("✓ Gemini request succeeded with model {}", model);
             return Ok(CompletionResponse {
                 text,
-                usage: TokenUsage::default(),
                 model: model.to_string(),
             });
         }

@@ -12,7 +12,7 @@ use log::{debug, info};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::{AiProvider, CompletionRequest, CompletionResponse, ProviderError, TokenUsage};
+use super::{AiProvider, CompletionRequest, CompletionResponse, ProviderError};
 
 // ── Request structures ──────────────────────────────────────
 
@@ -40,25 +40,16 @@ struct ChatResponse {
     id: String,
     model: String,
     choices: Vec<Choice>,
-    usage: Option<Usage>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Choice {
     message: ResponseMessage,
-    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ResponseMessage {
     content: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Usage {
-    prompt_tokens: Option<u32>,
-    completion_tokens: Option<u32>,
-    total_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,9 +60,6 @@ struct ApiErrorBody {
 #[derive(Debug, Deserialize)]
 struct ApiError {
     message: String,
-    #[serde(rename = "type")]
-    error_type: Option<String>,
-    code: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,18 +89,6 @@ pub struct OpenAiProvider {
 }
 
 impl OpenAiProvider {
-    pub fn new(api_key: String, model: String) -> Self {
-        Self {
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
-                .build()
-                .expect("Failed to build HTTP client"),
-            api_key,
-            model,
-            base_url: "https://api.openai.com/v1".to_string(),
-        }
-    }
-
     /// Creates an OpenAI-compatible provider with a custom base URL.
     /// Useful for Ollama, LM Studio, Azure OpenAI, etc.
     pub fn with_base_url(api_key: String, model: String, base_url: String) -> Self {
@@ -132,10 +108,6 @@ impl OpenAiProvider {
 impl AiProvider for OpenAiProvider {
     fn name(&self) -> &str {
         "OpenAI"
-    }
-
-    fn model(&self) -> &str {
-        &self.model
     }
 
     async fn complete(
@@ -232,18 +204,8 @@ impl AiProvider for OpenAiProvider {
             .and_then(|c| c.message.content)
             .ok_or(ProviderError::NoContent)?;
 
-        let usage = chat_response
-            .usage
-            .map(|u| TokenUsage {
-                prompt_tokens: u.prompt_tokens,
-                completion_tokens: u.completion_tokens,
-                total_tokens: u.total_tokens,
-            })
-            .unwrap_or_default();
-
         Ok(CompletionResponse {
             text,
-            usage,
             model: chat_response.model,
         })
     }
@@ -349,7 +311,6 @@ impl AiProvider for OpenAiProvider {
 
         Ok(CompletionResponse {
             text,
-            usage: TokenUsage::default(),
             model: response_model,
         })
     }

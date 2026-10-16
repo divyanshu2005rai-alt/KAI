@@ -37,21 +37,11 @@ pub struct ConversationMessage {
     pub content: String,
 }
 
-/// Token usage statistics from the provider.
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct TokenUsage {
-    pub prompt_tokens: Option<u32>,
-    pub completion_tokens: Option<u32>,
-    pub total_tokens: Option<u32>,
-}
-
 /// A completed AI response.
 #[derive(Debug, Clone)]
 pub struct CompletionResponse {
     /// The generated text (already extracted from the provider's JSON structure)
     pub text: String,
-    /// Token usage statistics
-    pub usage: TokenUsage,
     /// Which model actually generated the response
     pub model: String,
 }
@@ -86,9 +76,6 @@ pub enum ProviderError {
 pub trait AiProvider: Send + Sync {
     /// Human-readable provider name (e.g. "OpenAI", "Anthropic")
     fn name(&self) -> &str;
-
-    /// Currently configured model name
-    fn model(&self) -> &str;
 
     /// Send a completion request and await the full response.
     async fn complete(

@@ -41,6 +41,7 @@ mod tests {
 }
 
 impl AppState {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::with_history_limit(10)
     }
@@ -60,10 +61,6 @@ impl AppState {
 
     pub fn is_processing(&self) -> bool {
         self.processing.load(Ordering::SeqCst)
-    }
-
-    pub fn set_paused(&self, value: bool) {
-        self.paused.store(value, Ordering::SeqCst);
     }
 
     pub fn toggle_paused(&self) -> bool {

@@ -31,10 +31,6 @@ impl AiProvider for FailoverProvider {
         "Provider failover"
     }
 
-    fn model(&self) -> &str {
-        self.primary.model()
-    }
-
     async fn complete(
         &self,
         request: CompletionRequest,

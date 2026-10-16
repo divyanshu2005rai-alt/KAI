@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 # Direct Win32 keyboard hook (WH_KEYBOARD_LL) — no admin required
 windows-sys = { version = "0.60", features = [
@@ -24,7 +24,7 @@ windows-sys = { version = "0.60", features = [
 ] }
 
 # Text injection (keyboard simulation)
-enigo = { version = "0.2", features = [] }
+enigo = "0.2"
 
 # Clipboard access (for large text paste strategy)
 arboard = "3"
@@ -52,18 +52,12 @@ futures-util = "0.3"
 log = "0.4"
 env_logger = "0.11"
 
-# Cross-thread communication
-tokio-util = { version = "0.7", features = ["codec"] }
-
 # Error handling
 anyhow = "1"
 thiserror = "1"
 
 # Directory paths (AppData, home dir, etc.)
 dirs = "5"
-
-# String utilities
-unicode-segmentation = "1"
 
 # Windows system-tray controls; kept behind the tray adapter module.
 tray-icon = "0.25.1"

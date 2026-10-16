@@ -237,7 +237,11 @@ mod tests {
     fn engine() -> (TriggerEngine, UnboundedReceiver<CapturedTrigger>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (
-            TriggerEngine::new(Config::default(), tx, Arc::new(AppState::new())),
+            TriggerEngine::new(
+                Config::default(),
+                tx,
+                Arc::new(AppState::with_history_limit(10)),
+            ),
             rx,
         )
     }
@@ -339,7 +343,7 @@ mod tests {
     #[test]
     fn paused_engine_ignores_input_and_resets_capture() {
         let (mut engine, mut rx) = engine();
-        engine.app_state.set_paused(true);
+        engine.app_state.toggle_paused();
         start_capture(&mut engine);
         for c in "ask do not send".chars() {
             engine.handle_event(KeyEvent::Char(c));
