@@ -13,6 +13,8 @@ mod listener;
 mod parser;
 mod providers;
 mod settings;
+mod settings_ui;
+mod startup;
 mod state;
 mod tray;
 mod trigger;
@@ -20,8 +22,10 @@ mod triggers;
 
 use anyhow::Result;
 use log::{error, info, warn};
+use std::os::windows::process::CommandExt;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
 use config::Config;
 use listener::KeyEvent;
@@ -32,6 +36,21 @@ use triggers::TriggersFile;
 use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 fn main() -> Result<()> {
+    let launch_in_background = std::env::args().any(|arg| arg == "--background");
+    let launched_hidden = std::env::args().any(|arg| arg == "--quiet-start");
+    let startup_refresh_error = if launch_in_background && !launched_hidden {
+        match startup::refresh_if_enabled() {
+            Ok(true) => return Ok(()),
+            Ok(false) => None,
+            Err(error) => Some(error.to_string()),
+        }
+    } else {
+        None
+    };
+    if launch_in_background {
+        startup::detach_console();
+    }
+
     if std::env::args().any(|arg| arg == "--setup-credentials") {
         setup_credentials()?;
         return Ok(());
@@ -40,9 +59,26 @@ fn main() -> Result<()> {
         settings::SettingsService::interactive()?;
         return Ok(());
     }
+    if std::env::args().any(|arg| arg == "--configure-ui") {
+        settings_ui::run()?;
+        return Ok(());
+    }
+    if std::env::args().any(|arg| arg == "--edit-triggers") {
+        settings_ui::run_trigger_editor()?;
+        return Ok(());
+    }
 
     // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    if let Some(error) = startup_refresh_error {
+        warn!("Could not refresh hidden sign-in launcher: {}", error);
+    }
+
+    if !launch_in_background {
+        if let Err(error) = open_startup_settings() {
+            warn!("Could not open KAI settings window: {}", error);
+        }
+    }
 
     info!("╔══════════════════════════════════════╗");
     info!("║   KAI — Universal AI Input Layer     ║");
@@ -109,34 +145,36 @@ fn main() -> Result<()> {
 
     // Temporary control surface shared by the future system tray UI.
     // Commands: p = pause/resume, s = status, q = quit.
-    let state_for_controls = Arc::clone(&app_state);
-    std::thread::spawn(move || {
-        use std::io::{self, BufRead};
-        for line in io::stdin().lock().lines().flatten() {
-            match line.trim().to_ascii_lowercase().as_str() {
-                "p" | "pause" | "resume" => {
-                    let paused = state_for_controls.toggle_paused();
-                    info!("KAI {}", if paused { "paused" } else { "resumed" });
+    if !launch_in_background {
+        let state_for_controls = Arc::clone(&app_state);
+        std::thread::spawn(move || {
+            use std::io::{self, BufRead};
+            for line in io::stdin().lock().lines().flatten() {
+                match line.trim().to_ascii_lowercase().as_str() {
+                    "p" | "pause" | "resume" => {
+                        let paused = state_for_controls.toggle_paused();
+                        info!("KAI {}", if paused { "paused" } else { "resumed" });
+                    }
+                    "s" | "status" => {
+                        info!(
+                            "KAI status: {}, processing: {}",
+                            if state_for_controls.is_paused() {
+                                "paused"
+                            } else {
+                                "active"
+                            },
+                            state_for_controls.is_processing()
+                        );
+                    }
+                    "q" | "quit" | "exit" => {
+                        info!("KAI shutting down from control command");
+                        std::process::exit(0);
+                    }
+                    _ => info!("Control commands: p=pause/resume, s=status, q=quit"),
                 }
-                "s" | "status" => {
-                    info!(
-                        "KAI status: {}, processing: {}",
-                        if state_for_controls.is_paused() {
-                            "paused"
-                        } else {
-                            "active"
-                        },
-                        state_for_controls.is_processing()
-                    );
-                }
-                "q" | "quit" | "exit" => {
-                    info!("KAI shutting down from control command");
-                    std::process::exit(0);
-                }
-                _ => info!("Control commands: p=pause/resume, s=status, q=quit"),
             }
-        }
-    });
+        });
+    }
 
     let state_for_ai = Arc::clone(&app_state);
     let provider_for_ai = Arc::clone(&provider);
@@ -159,6 +197,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn open_startup_settings() -> Result<()> {
+    let executable = std::env::current_exe()?;
+    std::process::Command::new(executable)
+        .arg("--configure-ui")
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()?;
+    Ok(())
+}
+
 fn setup_credentials() -> Result<()> {
     println!("KAI secure credential setup");
     println!("Leave a value empty to skip it.");
@@ -173,6 +220,12 @@ fn setup_credentials() -> Result<()> {
     if !gemini.trim().is_empty() {
         credentials::write_secret("KAI/GEMINI_API_KEY", gemini.trim())?;
         println!("Gemini credential saved to Windows Credential Manager.");
+    }
+
+    let compatible = rpassword::prompt_password("OpenAI-compatible API key (optional): ")?;
+    if !compatible.trim().is_empty() {
+        credentials::write_secret("KAI/OPENAI_COMPATIBLE_API_KEY", compatible.trim())?;
+        println!("OpenAI-compatible credential saved to Windows Credential Manager.");
     }
     Ok(())
 }
@@ -249,7 +302,28 @@ async fn run_ai_dispatcher(
         state.set_processing(true);
 
         // Build system prompt from YAML trigger definitions
-        let (system_prompt, max_tokens) = trigger_defs.resolve(&parsed.command);
+        let (system_prompt, max_tokens, configured_provider, configured_model) =
+            trigger_defs.resolve_route(&parsed.command);
+        let (trigger_provider, trigger_model) =
+            if config.routing.mode.eq_ignore_ascii_case("trigger-based") {
+                (configured_provider, configured_model)
+            } else {
+                (None, None)
+            };
+        let request_provider = if trigger_provider.is_some() || trigger_model.is_some() {
+            match providers::factory::build_for(&config, trigger_provider, trigger_model) {
+                Ok(provider) => provider,
+                Err(error) => {
+                    error!("Could not select provider for trigger: {}", error);
+                    injector.delete_chars(captured.char_count);
+                    let _ = injector.inject_text(&format!("[KAI Error: {}]", error));
+                    state.set_processing(false);
+                    continue;
+                }
+            }
+        } else {
+            Arc::clone(&provider)
+        };
 
         // Call AI provider
         let source_window = foreground_window();
@@ -268,20 +342,21 @@ async fn run_ai_dispatcher(
             stream: config.general.stream_responses,
         };
 
-        let use_streaming = config.general.stream_responses && provider.supports_streaming();
+        let use_streaming =
+            config.general.stream_responses && request_provider.supports_streaming();
         if config.general.stream_responses && !use_streaming {
             info!(
                 "Provider {} does not support streaming; using complete response mode",
-                provider.name()
+                request_provider.name()
             );
         }
         let completion = tokio::time::timeout(
             tokio::time::Duration::from_secs(config.general.timeout_seconds),
             async {
                 if use_streaming {
-                    provider.complete_stream(request).await
+                    request_provider.complete_stream(request).await
                 } else {
-                    provider.complete(request).await
+                    request_provider.complete(request).await
                 }
             },
         )

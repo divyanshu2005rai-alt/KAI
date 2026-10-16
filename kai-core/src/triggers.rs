@@ -12,7 +12,7 @@
 //
 // Usage:
 //   let triggers = TriggersFile::load()?;
-//   let (system_prompt, max_tokens) = triggers.resolve("ask");
+//   let (system_prompt, max_tokens, provider, model) = triggers.resolve_route("ask");
 // ============================================================
 
 use anyhow::bail;
@@ -24,18 +24,27 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 
+const MAX_TRIGGER_INSTRUCTION_CHARS: usize = 20_000;
+
 /// A single trigger definition from triggers.yml.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TriggerDef {
     /// Primary command name (e.g. "ask", "coder", "fix")
     pub name: String,
     /// Alternative names that map to the same trigger (e.g. ["code", "dev"])
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<String>,
     /// The AI system prompt for this trigger
     pub prompt: String,
     /// Max tokens for the response (optional, defaults to 2000)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    /// Optional provider override: groq, gemini, or openai-compatible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Optional provider model identifier for this trigger.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// The top-level structure of triggers.yml.
@@ -88,20 +97,24 @@ impl TriggersFile {
         Ok(triggers)
     }
 
-    /// Resolves a command name (or alias) to its (system_prompt, max_tokens).
-    /// Falls back to (fallback_prompt, 2000) if nothing matches.
-    pub fn resolve(&self, command: &str) -> (&str, u32) {
+    /// Resolves prompt settings and an optional provider/model route.
+    pub fn resolve_route(&self, command: &str) -> (&str, u32, Option<&str>, Option<&str>) {
         let cmd = command.to_lowercase();
         for trigger in &self.triggers {
             if trigger.name == cmd || trigger.aliases.iter().any(|a| a == &cmd) {
-                return (&trigger.prompt, trigger.max_tokens.unwrap_or(2000));
+                return (
+                    &trigger.prompt,
+                    trigger.max_tokens.unwrap_or(2000),
+                    trigger.provider.as_deref(),
+                    trigger.model.as_deref(),
+                );
             }
         }
         warn!(
             "No trigger found for command '{}' — using fallback",
             command
         );
-        (&self.fallback_prompt, 2000)
+        (&self.fallback_prompt, 2000, None, None)
     }
 
     /// Returns whether a command or alias is explicitly configured.
@@ -117,19 +130,99 @@ impl TriggersFile {
 
     /// Validates trigger names and aliases before they can be used.
     pub fn validate(&self) -> Result<()> {
+        if self.fallback_prompt.trim().is_empty() {
+            bail!("fallback_prompt must not be empty");
+        }
+        if self.fallback_prompt.chars().count() > MAX_TRIGGER_INSTRUCTION_CHARS {
+            bail!(
+                "fallback_prompt exceeds the {} character limit",
+                MAX_TRIGGER_INSTRUCTION_CHARS
+            );
+        }
         let mut names = std::collections::HashSet::new();
         for trigger in &self.triggers {
             if trigger.name.trim().is_empty() || trigger.prompt.trim().is_empty() {
                 bail!("trigger names and prompts must not be empty");
             }
+            if trigger.prompt.chars().count() > MAX_TRIGGER_INSTRUCTION_CHARS {
+                bail!(
+                    "prompt for trigger '{}' exceeds the {} character limit",
+                    trigger.name,
+                    MAX_TRIGGER_INSTRUCTION_CHARS
+                );
+            }
+            if let Some(max_tokens) = trigger.max_tokens {
+                if !(1..=128_000).contains(&max_tokens) {
+                    bail!(
+                        "max_tokens for trigger '{}' must be between 1 and 128000",
+                        trigger.name
+                    );
+                }
+            }
+            if let Some(provider) = &trigger.provider {
+                if !matches!(
+                    provider.to_ascii_lowercase().as_str(),
+                    "groq" | "gemini" | "openai-compatible"
+                ) {
+                    bail!(
+                        "unsupported provider on trigger '{}': {}",
+                        trigger.name,
+                        provider
+                    );
+                }
+            }
+            if trigger
+                .model
+                .as_ref()
+                .is_some_and(|model| model.trim().is_empty() || model.len() > 200)
+            {
+                bail!(
+                    "model on trigger '{}' must contain 1 to 200 characters",
+                    trigger.name
+                );
+            }
+            if trigger.model.is_some() && trigger.provider.is_none() {
+                bail!(
+                    "trigger '{}' must set a provider when it sets a model",
+                    trigger.name
+                );
+            }
             for name in std::iter::once(&trigger.name).chain(trigger.aliases.iter()) {
                 let normalized = name.to_lowercase();
+                if name.len() > 64
+                    || !name.chars().all(|character| {
+                        character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+                    })
+                {
+                    bail!("trigger names and aliases may use only letters, digits, '-' and '_' (max 64 characters)");
+                }
                 if normalized == "help" || normalized == "list" || !names.insert(normalized.clone())
                 {
                     bail!("duplicate or reserved trigger name: {}", name);
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Validates and atomically saves trigger definitions as YAML.
+    pub fn save(&self) -> Result<()> {
+        self.validate()?;
+        let path = Self::triggers_file();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create config dir: {:?}", parent))?;
+        }
+        let yaml =
+            serde_yaml::to_string(self).context("Failed to serialize trigger configuration")?;
+        let content = format!(
+            "# KAI Triggers Configuration\n# Edit through KAI Settings or this YAML file.\n# Provider/model overrides require routing.mode = \"trigger-based\".\n\n{yaml}"
+        );
+        let temp_path = path.with_extension("yml.tmp");
+        fs::write(&temp_path, content)
+            .with_context(|| format!("Failed to write temporary trigger file: {:?}", temp_path))?;
+        fs::rename(&temp_path, &path)
+            .with_context(|| format!("Failed to replace trigger file: {:?}", path))?;
         Ok(())
     }
 
@@ -174,6 +267,9 @@ impl TriggersFile {
 #   aliases:    Other names that do the same thing (optional)
 #   prompt:     The AI system instruction for this trigger
 #   max_tokens: Max response length (optional, default: 2000)
+#   provider:   Optional override: groq, gemini, or openai-compatible
+#   model:      Optional model ID supported by that provider
+#   Note:       Provider/model are used only when routing.mode = "trigger-based".
 #
 # To ADD a new trigger:  add a new block under "triggers:"
 # To EDIT a trigger:     change its "prompt:" field
@@ -185,6 +281,8 @@ triggers:
   - name: human
     aliases: [me]
     max_tokens: 2000
+    # provider: groq
+    # model: openai/gpt-oss-120b
     prompt: >
         You are a human. Respond to the user as a human would, with empathy and understanding.
         Use real world knowledge and common sense. Avoid AI jargon or disclaimers.
@@ -275,6 +373,8 @@ mod tests {
                 aliases: vec!["code".to_string()],
                 prompt: "coding assistant".to_string(),
                 max_tokens: Some(1000),
+                provider: Some("groq".to_string()),
+                model: Some("openai/gpt-oss-120b".to_string()),
             }],
             fallback_prompt: "fallback".to_string(),
         }
@@ -289,11 +389,13 @@ mod tests {
     }
 
     #[test]
-    fn resolve_returns_configured_prompt_and_limit() {
+    fn resolve_route_returns_all_configured_settings() {
         let triggers = definitions();
-        let (prompt, max_tokens) = triggers.resolve("code");
+        let (prompt, max_tokens, provider, model) = triggers.resolve_route("code");
         assert_eq!(prompt, "coding assistant");
         assert_eq!(max_tokens, 1000);
+        assert_eq!(provider, Some("groq"));
+        assert_eq!(model, Some("openai/gpt-oss-120b"));
     }
 
     #[test]
@@ -304,6 +406,8 @@ mod tests {
             aliases: vec![],
             prompt: "duplicate".to_string(),
             max_tokens: None,
+            provider: None,
+            model: None,
         });
         assert!(triggers.validate().is_err());
     }

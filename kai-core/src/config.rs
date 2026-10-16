@@ -63,13 +63,24 @@ pub struct ProvidersConfig {
     #[serde(default)]
     pub active_provider: Option<String>,
     #[serde(default)]
+    pub groq: Option<GroqConfig>,
+    #[serde(default)]
     pub gemini: Option<GeminiConfig>,
     #[serde(default)]
     pub openai_compatible: Option<OpenAiCompatibleConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroqConfig {
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingConfig {
+    /// "automatic", "manual", or "trigger-based".
+    #[serde(default = "default_routing_mode")]
+    pub mode: String,
     /// "auto", "cloud", or "local".
     #[serde(default = "default_routing_strategy")]
     pub strategy: String,
@@ -84,11 +95,16 @@ pub struct RoutingConfig {
 impl Default for RoutingConfig {
     fn default() -> Self {
         Self {
+            mode: default_routing_mode(),
             strategy: default_routing_strategy(),
             local_first: false,
             fallback: default_routing_fallback(),
         }
     }
+}
+
+fn default_routing_mode() -> String {
+    "automatic".to_string()
 }
 
 fn default_routing_strategy() -> String {
@@ -101,8 +117,10 @@ fn default_routing_fallback() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeminiConfig {
-    pub api_key: Option<String>,
     pub default_model: Option<String>,
+    /// Read only to migrate older plaintext configs into Credential Manager.
+    #[serde(rename = "api_key", default, skip_serializing)]
+    pub(crate) legacy_api_key: Option<String>,
 }
 
 /// Configuration for OpenAI-compatible APIs such as Groq, Qwen-compatible
@@ -110,12 +128,13 @@ pub struct GeminiConfig {
 /// application to one vendor when new providers are added later.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAiCompatibleConfig {
-    #[serde(default)]
-    pub api_key: Option<String>,
     pub base_url: String,
     pub default_model: String,
     #[serde(default)]
     pub env_key: Option<String>,
+    /// Read only to migrate older plaintext configs into Credential Manager.
+    #[serde(rename = "api_key", default, skip_serializing)]
+    pub(crate) legacy_api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,13 +159,17 @@ impl Default for Config {
             },
             providers: ProvidersConfig {
                 active_provider: Some("auto".to_string()),
+                groq: Some(GroqConfig {
+                    model: Some("openai/gpt-oss-120b".to_string()),
+                }),
                 gemini: Some(GeminiConfig {
-                    api_key: None,
                     default_model: Some("gemini-2.5-flash".to_string()),
+                    legacy_api_key: None,
                 }),
                 openai_compatible: None,
             },
             routing: RoutingConfig {
+                mode: "automatic".to_string(),
                 strategy: "auto".to_string(),
                 local_first: false,
                 fallback: true,
@@ -155,7 +178,7 @@ impl Default for Config {
                 // Clipboard paste preserves punctuation, Unicode, and ordering
                 // across Windows applications better than simulated typing.
                 clipboard_threshold: 1,
-                backspace_delay_ms: 5,
+                backspace_delay_ms: 0,
             },
         }
     }
@@ -190,9 +213,38 @@ impl Config {
         let content = fs::read_to_string(&config_path)
             .with_context(|| format!("Failed to read config file: {:?}", config_path))?;
 
-        let config: Config = toml::from_str(&content)
+        let mut config: Config = toml::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {:?}", config_path))?;
 
+        let mut migrated_secret = false;
+        if let Some(secret) = config
+            .providers
+            .gemini
+            .as_mut()
+            .and_then(|provider| provider.legacy_api_key.take())
+            .filter(|secret| !secret.trim().is_empty())
+        {
+            crate::credentials::write_secret("KAI/GEMINI_API_KEY", secret.trim())
+                .context("Could not migrate Gemini key to Windows Credential Manager")?;
+            migrated_secret = true;
+        }
+        if let Some(secret) = config
+            .providers
+            .openai_compatible
+            .as_mut()
+            .and_then(|provider| provider.legacy_api_key.take())
+            .filter(|secret| !secret.trim().is_empty())
+        {
+            crate::credentials::write_secret("KAI/OPENAI_COMPATIBLE_API_KEY", secret.trim())
+                .context(
+                    "Could not migrate compatible-provider key to Windows Credential Manager",
+                )?;
+            migrated_secret = true;
+        }
+        if migrated_secret {
+            config.write_config()?;
+            warn!("Moved legacy provider API keys from config.toml to Windows Credential Manager");
+        }
         config.validate()?;
 
         info!("Config loaded from {:?}", config_path);
@@ -202,6 +254,10 @@ impl Config {
     /// Validate and atomically persist the configuration.
     pub fn save(&self) -> Result<()> {
         self.validate()?;
+        self.write_config()
+    }
+
+    fn write_config(&self) -> Result<()> {
         let path = Self::config_file();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -232,6 +288,82 @@ impl Config {
         }
         if self.general.context_turns > 100 {
             bail!("general.context_turns must be 100 or less");
+        }
+        for model in [
+            self.providers
+                .groq
+                .as_ref()
+                .and_then(|provider| provider.model.as_ref()),
+            self.providers
+                .gemini
+                .as_ref()
+                .and_then(|provider| provider.default_model.as_ref()),
+            self.providers
+                .openai_compatible
+                .as_ref()
+                .map(|provider| &provider.default_model),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if model.trim().is_empty() || model.len() > 200 {
+                bail!("provider model IDs must contain 1 to 200 characters");
+            }
+        }
+        if let Some(provider) = &self.providers.openai_compatible {
+            if provider.base_url.len() > 2048 {
+                bail!("providers.openai_compatible.base_url is too long");
+            }
+            let url = reqwest::Url::parse(&provider.base_url)
+                .context("providers.openai_compatible.base_url must be an absolute URL")?;
+            if !url.username().is_empty()
+                || url.password().is_some()
+                || url.query().is_some()
+                || url.fragment().is_some()
+            {
+                bail!("compatible-provider base URLs must not contain credentials, queries, or fragments");
+            }
+            let is_loopback = url.host_str().is_some_and(|host| {
+                host.eq_ignore_ascii_case("localhost")
+                    || host
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|address| address.is_loopback())
+            });
+            if !matches!(url.scheme(), "https") && !(url.scheme() == "http" && is_loopback) {
+                bail!(
+                    "compatible-provider URLs must use HTTPS, except for localhost HTTP endpoints"
+                );
+            }
+        }
+        if !matches!(
+            self.routing.mode.to_ascii_lowercase().as_str(),
+            "automatic" | "manual" | "trigger-based"
+        ) {
+            bail!("routing.mode must be automatic, manual, or trigger-based");
+        }
+        if !matches!(
+            self.providers
+                .active_provider
+                .as_deref()
+                .unwrap_or("auto")
+                .to_ascii_lowercase()
+                .as_str(),
+            "auto" | "cloud" | "local" | "groq" | "gemini" | "openai-compatible"
+        ) {
+            bail!("providers.active_provider is not a supported provider route");
+        }
+        if self.routing.mode.eq_ignore_ascii_case("manual")
+            && matches!(
+                self.providers
+                    .active_provider
+                    .as_deref()
+                    .unwrap_or("auto")
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "auto" | "cloud"
+            )
+        {
+            bail!("manual routing requires a specific provider selection");
         }
         if !matches!(
             self.routing.strategy.to_ascii_lowercase().as_str(),
@@ -284,11 +416,17 @@ include_selected_text = false
 # Request streamed output when supported. KAI injects only the final response.
 stream_responses = false
 
+[providers.groq]
+# Optional Groq model. KAI_MODEL and GROQ_MODEL override this value.
+model = "openai/gpt-oss-120b"
+
 [providers.gemini]
-# api_key = "your-gemini-key-here"
+# Store API keys with --setup-credentials; keys do not belong in this file.
 default_model = "gemini-2.5-flash"
 
 [routing]
+# Choose: "automatic", "manual", or "trigger-based".
+mode = "automatic"
 # Strategy: "auto", "cloud", or "local".
 strategy = "auto"
 # Prefer [providers.openai_compatible] in auto mode.
@@ -301,8 +439,9 @@ fallback = true
 # Keep this at 1 to preserve exact text across Windows applications.
 clipboard_threshold = 1
 
-# Delay between backspace keystrokes when erasing trigger text (milliseconds).
-backspace_delay_ms = 5
+# Optional delay between backspace keystrokes (milliseconds). Set above 0 only
+# if a target application drops rapid synthetic input.
+backspace_delay_ms = 0
 "#;
 
         fs::write(path, default_content)
@@ -324,7 +463,9 @@ mod tests {
 
     #[test]
     fn default_config_is_valid() {
-        assert!(Config::default().validate().is_ok());
+        let config = Config::default();
+        assert_eq!(config.injection.backspace_delay_ms, 0);
+        assert!(config.validate().is_ok());
     }
 
     #[test]
@@ -346,5 +487,7 @@ mod tests {
         let text = toml::to_string(&Config::default()).expect("default config should serialize");
         assert!(text.contains("trigger_prefix"));
         assert!(text.contains("active_provider"));
+        assert!(text.contains("[providers.groq]"));
+        assert!(text.contains("openai/gpt-oss-120b"));
     }
 }

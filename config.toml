@@ -52,5 +52,6 @@ fallback = true
 # Text shorter than this uses simulated keystrokes (safer for all apps).
 clipboard_threshold = 200
 
-# Delay between backspace keystrokes when erasing trigger text (milliseconds).
-backspace_delay_ms = 5
+# Optional delay between backspace keystrokes (milliseconds). Set above 0 only
+# if a target application drops rapid synthetic input.
+backspace_delay_ms = 0

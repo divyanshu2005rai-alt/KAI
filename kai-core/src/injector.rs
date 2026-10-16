@@ -41,15 +41,17 @@ impl TextInjector {
 
     /// Sends N backspace keystrokes to erase the trigger text the user typed.
     ///
-    /// We also need to erase the Enter keypress — but since Enter caused a
-    /// newline to be inserted in most apps, we send an extra Backspace to
-    /// remove it too.
+    /// Keep a configurable pause for applications that drop rapid input, but
+    /// default to no per-key delay. The final pause lets the target process
+    /// the deletion before replacement text is injected.
     pub fn delete_chars(&mut self, char_count: usize) {
         debug!("Sending {} backspaces to erase trigger text", char_count);
 
         for _ in 0..char_count {
             let _ = self.enigo.key(Key::Backspace, Click);
-            thread::sleep(Duration::from_millis(self.backspace_delay_ms));
+            if self.backspace_delay_ms > 0 {
+                thread::sleep(Duration::from_millis(self.backspace_delay_ms));
+            }
         }
 
         thread::sleep(Duration::from_millis(30));

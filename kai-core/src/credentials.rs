@@ -62,7 +62,26 @@ pub fn write_secret(target: &str, secret: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+pub fn delete_secret(target: &str) -> anyhow::Result<()> {
+    use windows_sys::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
+
+    let target_wide: Vec<u16> = target.encode_utf16().chain(Some(0)).collect();
+    if unsafe { CredDeleteW(target_wide.as_ptr(), CRED_TYPE_GENERIC, 0) } == 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(1168) {
+            return Err(error.into());
+        }
+    }
+    Ok(())
+}
+
 #[cfg(not(windows))]
 pub fn write_secret(_target: &str, _secret: &str) -> anyhow::Result<()> {
+    anyhow::bail!("secure credential storage is not implemented for this operating system")
+}
+
+#[cfg(not(windows))]
+pub fn delete_secret(_target: &str) -> anyhow::Result<()> {
     anyhow::bail!("secure credential storage is not implemented for this operating system")
 }

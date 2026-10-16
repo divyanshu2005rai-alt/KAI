@@ -6,6 +6,7 @@
 // this trait, enabling easy swapping and multi-provider support.
 // ============================================================
 
+pub mod catalog;
 pub mod factory;
 pub mod gemini;
 pub mod openai;

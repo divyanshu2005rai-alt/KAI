@@ -94,11 +94,13 @@ When KAI is running from a terminal, the control channel currently accepts:
 - `s` — show active/paused and processing status
 - `q` — quit KAI
 
-The system tray also provides **Configure KAI**, which opens the validated
-settings flow, and **Open configuration** for direct advanced editing.
-
-These controls use the same shared state that the future system-tray UI will
-use, so the UI can be added without changing the trigger pipeline.
+On normal startup, KAI opens its settings window so provider and model choices
+are easy to reach. The system tray also provides **Configure KAI** to reopen or
+focus that window, and **Open configuration** for direct advanced editing.
+Tray status and pause controls remain available independently of the settings
+window. In Settings, enable **Start KAI when I sign in** to launch it quietly in
+the background for your Windows user; it is off by default and can be disabled
+from the same checkbox.
 
 ## Resource usage
 
@@ -156,6 +158,7 @@ kai-core/
 │   └── providers/
 │       ├── mod.rs      # AiProvider trait and shared request types
 │       ├── factory.rs  # Config → provider boundary
+│       ├── catalog.rs  # Provider model IDs and capability evidence
 │       ├── openai.rs   # OpenAI-compatible implementation
 │       └── gemini.rs   # Gemini implementation
 ```
@@ -167,8 +170,18 @@ OpenAI-compatible provider routing, system-tray controls, secure Windows
 credential storage, optional selected-text context, bounded in-memory history,
 streaming support, and exact clipboard-based response injection.
 
-The next planned capabilities are Qwen-specific integration, vision/image
-prompts, installers, and macOS/Linux support.
+KAI includes a lightweight Windows settings window for provider/model choice,
+endpoint model discovery, routing preference, and secure API-key management.
+Its trigger editor can add, update, and remove commands in validated
+`triggers.yml`, including per-trigger provider/model overrides. Model discovery
+filters known non-text services and distinguishes catalog-advertised text
+support from unknown capability. **Test model** sends a small text request
+through the selected provider/model to verify unknown choices against KAI's
+current request path. Vision/image prompts are not implemented; image capability
+metadata remains unknown until that request path exists.
+
+Other planned capabilities are Qwen-specific integration, vision/image prompts,
+installers, and macOS/Linux support.
 
 To save credentials securely without putting them in a project file, run:
 
@@ -182,15 +195,68 @@ To edit validated KAI settings interactively, run:
 .\target\x86_64-pc-windows-gnu\release\kai.exe --configure
 ```
 
+KAI opens the graphical provider settings window during normal startup. To open
+or focus it manually, run:
+
+```powershell
+.\target\x86_64-pc-windows-gnu\release\kai.exe --configure-ui
+```
+
+To check a provider/model: open the settings window, choose that provider,
+enter and save its key, refresh the model list, choose an ID, then click
+**Test model**. A successful check reports the model that answered. This sends
+a small request to the provider and may count toward its usage or billing.
+
+The settings window also has an **Edit triggers** button. To open the trigger
+editor directly, run `kai.exe --edit-triggers`. In the editor, choose a provider
+and use **Load model IDs** to select a per-trigger model without editing YAML;
+typing an ID manually remains available.
+
+The settings flow stores provider and model choices in `config.toml`. Select a
+provider, enter its key, and choose **Save settings**; KAI keeps Groq, Gemini,
+and OpenAI-compatible credentials in Windows Credential Manager. Refresh the
+model list after saving a key, then use **Test model** to verify the actual text
+request path (a small provider request may incur usage charges). The interactive
+`--setup-credentials` command is also available. For an OpenAI-compatible local
+server, configure its URL and model in the settings flow. The default local
+endpoint is `http://127.0.0.1:11434/v1`.
+
+In **Manual provider** mode, KAI prefers the selected provider/model for every
+trigger. If fallback is enabled and the request fails, KAI may send that prompt
+to another configured provider. Choose **Per-trigger routing** to apply optional
+provider/model settings from each trigger in `triggers.yml`:
+
+```yaml
+- name: coder
+  aliases: [code, dev]
+  max_tokens: 3000
+  provider: groq
+  model: openai/gpt-oss-120b
+  prompt: >
+    You are an expert programming assistant.
+```
+
+The provider must be `groq`, `gemini`, or `openai-compatible`. Use a model ID
+listed by that provider; manually entered IDs are not guaranteed to support
+KAI's text request path, so test them in provider settings first. Set
+`routing.mode = "trigger-based"` in the settings window for these fields to
+take effect. Leave both fields out to use the configured fallback route.
+`KAI_PROVIDER` and model-specific environment variables remain available as
+deployment overrides.
+
+When provider fallback is enabled, the same prompt may be sent to a different
+configured provider after a request failure. Consider this when configuring
+cloud fallback for a local-first route.
+
 ## Privacy & Security
 
 - KAI's rolling buffer is max ~10 characters — only enough to detect `//`
 - No keystrokes are persisted to disk in Idle mode
 - Full prompt capture only activates **after** a valid trigger is matched
 - The last 10 conversation turns are kept in memory only and are not written to disk
-- API keys must be supplied through environment variables or OS credential storage; never commit them
+- On Windows, API keys are stored in Credential Manager or supplied through environment variables; never commit them
 - Prompt contents are not written to logs
-- All AI requests go over HTTPS
+- Cloud AI requests use HTTPS. The OpenAI-compatible endpoint may use HTTP only on loopback (for example, a local Ollama server).
 - No telemetry
 
 See [SECURITY.md](SECURITY.md) for the keyboard-hook privacy model and

@@ -103,8 +103,8 @@ impl AiProvider for GeminiProvider {
 
         for model in candidate_models {
             let url = format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-                model, self.api_key
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+                model
             );
 
             let mut contents = history
@@ -142,6 +142,7 @@ impl AiProvider for GeminiProvider {
             let response = match self
                 .client
                 .post(&url)
+                .header("x-goog-api-key", &self.api_key)
                 .header("Content-Type", "application/json")
                 .json(&body)
                 .send()

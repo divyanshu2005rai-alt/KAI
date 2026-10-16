@@ -32,24 +32,30 @@ being used.
 
 ### Application pipeline
 
-The dispatcher validates the parsed command, applies the configured trigger
-policy, builds a provider request, handles timeouts/errors, and applies the
-response through the injector. This is the future home for context selection,
-conversation memory, cancellation, retries, and response editing.
+`main.rs` validates the parsed command, resolves trigger instructions and
+optional provider/model overrides, captures configured selected-text context,
+uses bounded in-memory conversation history, applies request timeouts, and
+passes the response to the injector. Response editing and cancellation remain
+future work.
 
 ### Provider boundary
 
 `providers::AiProvider` is the stable interface for cloud, compatible, local,
-and vision providers. `providers::factory` is the only place that maps config
-to a concrete provider. New providers should implement the trait and register
-themselves there without changing trigger handling.
+and future vision providers. `providers::factory` is the only place that maps
+config to a concrete provider. `providers::catalog` supplies model IDs and
+capability evidence to the settings UI. It distinguishes advertised support
+from unknown metadata; unknown must be probed rather than treated as supported.
+New providers should implement the trait and register themselves there without
+changing trigger handling.
 
 ### Configuration boundary
 
-`config.rs` owns file locations, defaults, deserialization, and validation.
-Secrets come from the environment or a future OS credential-store adapter.
-Runtime modules should receive validated configuration rather than reading
-environment variables directly.
+`config.rs` owns file locations, defaults, deserialization, migration, and
+validation. `credentials.rs` stores provider keys in Windows Credential
+Manager; environment variables can override those saved keys. Provider
+environment overrides are resolved at the provider-factory boundary rather
+than in listener or trigger code. Other operating systems need their own
+credential-store adapters.
 
 ## Extension rules
 
@@ -65,8 +71,7 @@ environment variables directly.
 
 ## Planned additions
 
-- `context.rs`: selected text, active application, and conversation history.
-- `attachments.rs`: image/file metadata and secure temporary-file handling.
-- `routing.rs`: provider capabilities, model selection, retries, and fallback.
-- `platform/`: Windows, Linux, and macOS listener/injector adapters.
-- `ui/`: tray status, pause controls, and settings without changing the core.
+- Image/file request data and provider adapters for vision-capable models.
+- Linux and macOS listener/injector and credential-store adapters.
+- Cross-platform settings UI and installer/package workflows.
+- Explicit cancellation and response-editing flows.
